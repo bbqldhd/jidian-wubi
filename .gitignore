@@ -1,0 +1,25 @@
+# 构建产物
+build/
+*.exe
+*.dll
+*.o
+*.obj
+*.a
+*.lib
+*.user
+*.suo
+.vs/
+CMakeFiles/
+cmake-build-*/
+
+# IDE
+.idea/
+.vscode/
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 迁移/测试产生的临时数据
+*.log
+config.ini

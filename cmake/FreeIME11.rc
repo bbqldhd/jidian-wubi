@@ -1,0 +1,31 @@
+#include <windows.h>
+
+// FreeIME 11 —— 版本资源 11.0.0.0
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 11,0,0,0
+ PRODUCTVERSION 11,0,0,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "CompanyName",      "FreeIME Project"
+            VALUE "FileDescription",  "极点五笔 11 (FreeIME 11) TSF 文本服务"
+            VALUE "FileVersion",      "11.0.0.0"
+            VALUE "InternalName",     "FreeIME11"
+            VALUE "LegalCopyright",   "Based on FreeWB (Mulan PSL v2.0)"
+            VALUE "OriginalFilename", "FreeIME11.dll"
+            VALUE "ProductName",      "极点五笔 11"
+            VALUE "ProductVersion",   "11.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END

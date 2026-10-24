@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- FreeIME 11 安装器（WiX Toolset 4） -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="极点五笔 11" Manufacturer="FreeIME Project" Version="11.0.0"
+           UpgradeCode="1A2B3C4D-5E6F-7080-9A0B-1C2D3E4F5060"
+           Language="2052" Scope="perMachine" InstallerVersion="500">
+    <MajorUpgrade DowngradeErrorMessage="已安装更新版本。" Schedule="afterInstallExecute"/>
+
+    <MediaTemplate EmbedCab="yes"/>
+
+    <!-- 架构：x64 与 ARM64 分别构建 -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="FreeIME11"/>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="极点五笔 11" Level="1">
+      <ComponentGroupRef Id="ProductComponents"/>
+    </Feature>
+
+    <!-- 注册文本服务：调用 DllRegisterServer -->
+    <CustomAction Id="RegisterTip" DllEntry="DllRegisterServer"
+                  Execute="deferred" Impersonate="no" Return="check"/>
+    <CustomAction Id="UnregisterTip" DllEntry="DllUnregisterServer"
+                  Execute="deferred" Impersonate="no" Return="ignore"/>
+    <CustomAction Id="MigrateLegacy" FileRef="migrateExe" ExeCommand=""
+                  Execute="deferred" Impersonate="yes" Return="ignore"/>
+
+    <InstallExecuteSequence>
+      <Custom Action="MigrateLegacy" After="InstallFiles">NOT Installed</Custom>
+      <Custom Action="RegisterTip" After="MigrateLegacy">NOT Installed</Custom>
+      <Custom Action="UnregisterTip" Before="RemoveFiles">Installed</Custom>
+    </InstallExecuteSequence>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="TsfDll" Guid="7A8B9C0D-1E2F-3040-5A6B-7C8D9E0F1020">
+        <File Id="tsfDll" Source="build/Release/FreeIME11.dll" KeyPath="yes"/>
+      </Component>
+      <Component Id="MigrateExe" Guid="8B9C0D1E-2F30-4150-6B7C-8D9E0F112131">
+        <File Id="migrateExe" Source="build/Release/freeime11-migrate.exe" KeyPath="yes"/>
+      </Component>
+      <Component Id="SettingsExe" Guid="9C0D1E2F-3041-5261-7C8D-9E0F12223242">
+        <File Id="settingsExe" Source="build/Release/freeime11-settings.exe" KeyPath="yes"/>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

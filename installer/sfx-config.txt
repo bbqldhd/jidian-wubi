@@ -1,0 +1,5 @@
+;!@Install@!UTF-8!
+Title="FreeIME 11 Setup"
+BeginPrompt="Install FreeIME 11 (JiDian Wubi) v11.0.0?"
+RunProgram="install.bat"
+;!@InstallEnd@!
