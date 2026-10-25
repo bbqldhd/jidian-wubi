@@ -1,6 +1,8 @@
 // FreeIME 11 —— TSF 文本服务实现（MinGW 基础接口兼容）
 #include "FreeIME11Service.h"
 
+#include "CandidateWindow.h"
+
 #include <cassert>
 
 #include "../../utils/utils.h"
@@ -78,6 +80,7 @@ STDMETHODIMP FreeIME11Service::Activate(ITfThreadMgr *pThreadMgr, TfClientId tfC
 }
 
 STDMETHODIMP FreeIME11Service::Deactivate() {
+    CandidateWindow::instance().hide();
     ITfKeystrokeMgr *pKeystrokeMgr = nullptr;
     if (threadMgr_ && SUCCEEDED(threadMgr_->QueryInterface(IID_ITfKeystrokeMgr, (void **)&pKeystrokeMgr))) {
         pKeystrokeMgr->UnadviseKeyEventSink(tfClientId_);
@@ -117,7 +120,8 @@ STDMETHODIMP FreeIME11Service::OnKeyDown(ITfContext *pic, WPARAM wParam, LPARAM 
         std::vector<std::wstring> wide;
         wide.reserve(out.cands.size());
         for (auto &c : out.cands) wide.push_back(Utf8ToWide(c));
-        requestEdit(ES_UpdatePreedit, "", out.preedit, wide);
+        requestEdit(ES_UpdatePreedit, "", out.preedit, wide, out.candCursor, out.candHasPrev, out.candHasNext,
+                    out.auxText);
     } else {
         requestEdit(ES_Clear, "", "", {});
     }
@@ -151,6 +155,7 @@ STDMETHODIMP FreeIME11Service::OnInitDocumentMgr(ITfDocumentMgr *) { return S_OK
 STDMETHODIMP FreeIME11Service::OnUninitDocumentMgr(ITfDocumentMgr *) { return S_OK; }
 
 STDMETHODIMP FreeIME11Service::OnSetFocus(ITfDocumentMgr *pdimFocus, ITfDocumentMgr *) {
+    CandidateWindow::instance().hide();
     requestEdit(ES_Clear, "", "", {});
     if (pdimFocus) {
         ITfContext *pic = nullptr;
@@ -174,6 +179,7 @@ STDMETHODIMP FreeIME11Service::OnPushContext(ITfContext *pic) {
 }
 
 STDMETHODIMP FreeIME11Service::OnPopContext(ITfContext *pic) {
+    CandidateWindow::instance().hide();
     if (context_ == pic) {
         context_->Release();
         context_ = nullptr;
@@ -210,12 +216,17 @@ STDMETHODIMP FreeIME11Service::OnCompositionTerminated(TfEditCookie, ITfComposit
 BOOL FreeIME11Service::isComposing() const { return composition_ != nullptr; }
 
 HRESULT FreeIME11Service::requestEdit(EditSessionType type, const std::string &textUtf8, const std::string &preeditUtf8,
-                                      const std::vector<std::wstring> &cands) {
+                                      const std::vector<std::wstring> &cands, int cursor, bool hasPrev,
+                                      bool hasNext, const std::string &aux) {
     if (!context_) return E_FAIL;
     editType_ = type;
     editCommitText_ = textUtf8;
     editPreeditText_ = preeditUtf8;
     editCands_ = cands;
+    editCursor_ = cursor;
+    editHasPrev_ = hasPrev;
+    editHasNext_ = hasNext;
+    editAux_ = aux;
 
     HRESULT hr = E_FAIL;
     ITfEditSession *pSession = nullptr;
@@ -246,18 +257,7 @@ HRESULT FreeIME11Service::updateComposition(TfEditCookie ec, const std::string &
         return S_OK;
     }
 
-    // 候选内嵌显示：编码 + 候选词（MinGW msctf.h 无系统集成候选 UI）
-    if (!cands.empty()) {
-        preedit += L"  [";
-        for (size_t i = 0; i < cands.size(); ++i) {
-            if (i) preedit += L' ';
-            preedit += std::to_wstring(i + 1);
-            preedit += L'.';
-            preedit += cands[i];
-        }
-        preedit += L']';
-    }
-
+    // 候选不再拼进组字串，改由自绘候选窗显示（见 CandidateWindow）
     if (!isComposing()) {
         ITfRange *range = nullptr;
         if (FAILED(context_->GetStart(ec, &range)) || !range) return E_FAIL;
@@ -285,10 +285,66 @@ HRESULT FreeIME11Service::updateComposition(TfEditCookie ec, const std::string &
         }
         range->Release();
     }
+
+    // 候选窗：跟随插入符
+    if (!cands.empty()) {
+        POINT pt{0, 0};
+        if (!caretScreenPos(ec, pt)) {
+            // 兜底：鼠标位置，至少不会跑到左上角
+            GetCursorPos(&pt);
+        }
+        CandidateWindow::instance().show(cands, editCursor_, editHasPrev_, editHasNext_, Utf8ToWide(editAux_), pt);
+    } else {
+        CandidateWindow::instance().hide();
+    }
     return S_OK;
 }
 
+// 插入符屏幕坐标（左下方）。优先用 TSF 的 GetTextExt，失败再退回 GUI 线程的 caret。
+bool FreeIME11Service::caretScreenPos(TfEditCookie ec, POINT &pt) const {
+    if (context_) {
+        TF_SELECTION sel{};
+        ULONG n = 0;
+        if (SUCCEEDED(context_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) && n == 1 && sel.range) {
+            RECT rc{};
+            BOOL clipped = FALSE;
+            HRESULT hr = E_FAIL;
+            ITfContextView *view = nullptr;
+            if (SUCCEEDED(context_->GetActiveView(&view)) && view) {
+                hr = view->GetTextExt(ec, sel.range, &rc, &clipped);
+                if (FAILED(hr)) {
+                    RECT vr{};
+                    if (SUCCEEDED(view->GetScreenExt(&vr))) {
+                        rc = vr;
+                        hr = S_OK;
+                    }
+                }
+                view->Release();
+            }
+            sel.range->Release();
+            if (SUCCEEDED(hr)) {
+                pt.x = rc.left;
+                pt.y = rc.bottom;
+                return true;
+            }
+        }
+    }
+
+    // 兜底：当前线程焦点窗口的插入符
+    GUITHREADINFO gti{};
+    gti.cbSize = sizeof(gti);
+    if (GetGUIThreadInfo(GetCurrentThreadId(), &gti) && gti.hwndCaret) {
+        POINT p{gti.rcCaret.left, gti.rcCaret.bottom};
+        if (ClientToScreen(gti.hwndCaret, &p)) {
+            pt = p;
+            return true;
+        }
+    }
+    return false;
+}
+
 HRESULT FreeIME11Service::terminateComposition(TfEditCookie ec) {
+    CandidateWindow::instance().hide();
     if (isComposing()) {
         composition_->EndComposition(ec);
         composition_->Release();

@@ -23,8 +23,8 @@ echo "[2/5] 编译版本资源..."
 echo "[3/5] 编译 TSF 输入法 DLL..."
 "$GPP" -shared $COMMON -DUNICODE -D_UNICODE -Isrc/win/tsf \
   $UTILS $ENGINE src/session/session.cpp \
-  src/win/tsf/FreeIME11Service.cpp src/win/tsf/dllmain.cpp build/version.o \
-  -liconv -lole32 -ladvapi32 -luuid -lshell32 -static \
+  src/win/tsf/FreeIME11Service.cpp src/win/tsf/dllmain.cpp src/win/tsf/CandidateWindow.cpp build/version.o \
+  -liconv -lole32 -ladvapi32 -luuid -lshell32 -lgdi32 -lgdiplus -static \
   src/win/tsf/FreeIME11.def -o build/FreeIME11.dll
 
 echo "[4/5] 编译数据迁移工具..."

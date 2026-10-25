@@ -2,7 +2,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.0.3**。
+版本号 **11.0.4**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -22,7 +22,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序
-├── cmake/                   # 版本资源 11.0.3、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.0.4、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -63,7 +63,7 @@ bash build_mingw.sh
 
 ## 安装
 
-1. 运行 `FreeIME11-11.0.3-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+1. 运行 `FreeIME11-11.0.4-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
    写入「添加/删除程序」、创建开始菜单快捷方式）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
@@ -78,8 +78,15 @@ bash build_mingw.sh
 `%APPDATA%\FreeIME11`）。
 
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
-> MinGW 的 `msctf.h` 不含系统集成候选 UI 接口，当前候选以组合内嵌文本显示；
-> 用 MSVC + 完整 Windows SDK 构建可切换为 `ITfCandidateListUIElement` 系统候选 UI。
+> MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
+> （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.0.4：候选窗
+
+- **新增自绘候选窗**：候选不再拼进组字串，改为跟随插入符的浮动窗口
+  （圆角、阴影、首个候选高亮、翻页箭头）。组字区只显示输入的编码。
+- 候选窗为 `WS_EX_NOACTIVATE | WS_EX_LAYERED` 弹出窗，不抢焦点、不打断输入。
+- 位置取自 `ITfContextView::GetTextExt`；取不到时退回 GUI 线程插入符坐标。
 
 ## v11.0.3 修复（「设置里加完、返回就失效」）
 

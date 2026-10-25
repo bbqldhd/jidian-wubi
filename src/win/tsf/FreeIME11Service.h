@@ -73,10 +73,13 @@ private:
 
     BOOL isComposing() const;
     HRESULT requestEdit(EditSessionType type, const std::string &textUtf8, const std::string &preeditUtf8,
-                        const std::vector<std::wstring> &cands);
+                        const std::vector<std::wstring> &cands, int cursor = 0, bool hasPrev = false,
+                        bool hasNext = false, const std::string &aux = std::string());
     HRESULT commitText(TfEditCookie ec, const std::string &utf8);
     HRESULT updateComposition(TfEditCookie ec, const std::string &preeditUtf8, const std::vector<std::wstring> &cands);
     HRESULT terminateComposition(TfEditCookie ec);
+    // 取插入符位置（屏幕坐标，左下方）；失败返回 false
+    bool caretScreenPos(TfEditCookie ec, POINT &pt) const;
 
     LONG refCount_ = 1;
     TfClientId tfClientId_ = TF_CLIENTID_NULL;
@@ -93,6 +96,10 @@ private:
     std::string editCommitText_;
     std::string editPreeditText_;
     std::vector<std::wstring> editCands_;
+    int editCursor_ = 0;
+    bool editHasPrev_ = false;
+    bool editHasNext_ = false;
+    std::string editAux_;
 
     std::unique_ptr<freeime11::Session> session_;
 };
