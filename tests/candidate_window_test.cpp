@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MulanPSL-2.0
+// Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+// 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+
 // 候选窗自测（无需 TSF）：显示/命中测试/悬停/点选/翻页箭头
 #include "../src/win/tsf/CandidateWindow.h"
 

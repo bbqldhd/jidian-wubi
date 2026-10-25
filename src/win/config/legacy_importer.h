@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MulanPSL-2.0
+// Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+// 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+
 // FreeIME 11 —— 10.8.9 旧版数据迁移
 // 读取极点五笔 10.8.9 的 GBK INI（freeime.ini / default.ini / jidian.ini），
 // 转换为 FreeIME 11 的 UTF-8 config.ini 配置键。

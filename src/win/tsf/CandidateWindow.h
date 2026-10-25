@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MulanPSL-2.0
+// Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+// 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+
 // FreeIME 11 —— 自绘候选窗口
 //
 // MinGW 的 msctf.h 不含 ITfCandidateListUIElement，无法使用系统集成候选 UI，

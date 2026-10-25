@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MulanPSL-2.0
+// Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+// 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+
 // FreeIME 11 —— 输入会话层（跨平台）
 // 复刻极点五笔 10.8.9 的可感知输入行为，与 Windows TSF 前端解耦。
 // 本层只依赖可移植的 engine/ 与 utils/，不依赖任何桌面框架。

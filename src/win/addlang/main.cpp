@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MulanPSL-2.0
+// Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+// 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+
 // FreeIME 11 —— 把输入法启用为当前用户的一个键盘（TSF 官方方式）
 //
 // 首选路径：ITfInputProcessorProfileMgr::ActivateProfile

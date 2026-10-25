@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MulanPSL-2.0
+// Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+// 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+
 // FreeIME 11 —— TSF 文本服务（Windows 11，兼容 MinGW msctf.h 基础接口）
 // 将可移植 Session 会话层接入 Text Services Framework。
 // 候选：在组合文本中内嵌显示（MinGW 头不含 ITfCandidateListUIElement；

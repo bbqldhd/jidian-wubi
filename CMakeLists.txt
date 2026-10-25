@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MulanPSL-2.0
+# Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+# 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+
 # FreeIME 11 —— 极点五笔现代 TSF 重制（Windows 11）
 # 目标：Windows 10 1809+ / Windows 11 26H2；架构 x64 / ARM64。
 cmake_minimum_required(VERSION 3.20)

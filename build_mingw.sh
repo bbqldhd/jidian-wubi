@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MulanPSL-2.0
+# Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+# 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+#
 # FreeIME 11 —— MinGW (Dev-C++) 一键构建脚本
 # 用法：在 freeime11-win 目录下执行  bash build_mingw.sh
 set -e
@@ -8,6 +12,10 @@ WINDRES="/c/Program Files (x86)/Dev-Cpp/MinGW64/bin/windres.exe"
 MGW="/c/Program Files (x86)/Dev-Cpp/MinGW64"
 export PATH="$MGW/bin:$MGW/lib/gcc/x86_64-w64-mingw32/10.3.0:$PATH"
 mkdir -p build
+
+# 安装向导用的纯文本许可证（UTF-8 BOM，Inno Setup 才会按 UTF-8 解析中文）
+printf '\xef\xbb\xbf' > build/License.txt
+sed 's/^[[:space:]]*//' LICENSE >> build/License.txt
 
 COMMON="-std=c++17 -O2 -Isrc/utils -Isrc/engine -Isrc/session -Ithird_party"
 UTILS="src/utils/log.cpp src/utils/settings.cpp src/utils/utils.cpp"

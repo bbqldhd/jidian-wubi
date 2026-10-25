@@ -1,0 +1,38 @@
+FreeIME 11（极点五笔 11）
+Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+
+本软件以「木兰宽松许可证，第 2 版」（Mulan Permissive Software License, Version 2,
+Mulan PSL v2.0）发布。许可证全文见同目录下的 LICENSE 文件，也可从
+http://license.coscl.org.cn/MulanPSL2 获取。
+
+除非适用法律要求或书面同意，按本许可证分发的软件均按「现状」提供，
+不附带任何明示或默示的担保。
+
+--------------------------------------------------------------------------------
+第三方组件与来源
+
+1. FreeWB（https://gitee.com/openkylin/freewb）
+   许可证：Mulan PSL v2.0
+   说明：`src/engine/`、`src/utils/` 中的引擎与工具代码派生自该项目，
+   版权归 FreeWB 贡献者所有；本项目在其基础上做了 Windows 平台适配与修补。
+
+2. spdlog（https://github.com/gabime/spdlog）
+   许可证：MIT
+   说明：`third_party/spdlog/`，日志库（header-only）。
+
+3. SQLite（https://sqlite.org）
+   许可证：Public Domain
+   说明：`src/utils/sqlite3.h`，仅在启用 SQLite 词库时使用。
+
+4. libiconv（GNU LGPL v2.1 or later）
+   说明：由 MinGW-w64 运行库提供并以静态方式链接（`-liconv`），用于 GBK/UTF-8 转换。
+   本项目的完整源码与构建脚本随仓库提供，可据此重新链接。
+
+5. GDI+ / Win32 / TSF
+   说明：Windows 系统组件，随操作系统分发，不包含在本项目源码中。
+
+--------------------------------------------------------------------------------
+商标
+
+「极点五笔」「极点中文」名称及相关图标的权利归原作者所有。
+本项目为兼容性重制，与原作者无隶属关系；使用名称仅为说明兼容对象。

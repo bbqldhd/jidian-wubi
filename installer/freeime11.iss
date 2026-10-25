@@ -1,4 +1,8 @@
-﻿; FreeIME 11 —— Inno Setup 安装脚本（v11.0.2）
+﻿; SPDX-License-Identifier: MulanPSL-2.0
+; Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+; 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+
+; FreeIME 11 —— Inno Setup 安装脚本（v11.0.2）
 ; 生成标准 Windows 安装包：向导界面 + 添加/删除程序注册 + 自动卸载 + TSF 自注册
 
 [Setup]
@@ -22,6 +26,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\freeime11-settings.exe
 UninstallDisplayName=极点五笔 11
 WizardStyle=modern
+; 安装向导中的许可证页（UTF-8 BOM 文本，由 build_mingw.sh 生成）
+LicenseFile=..\build\License.txt
 
 [Languages]
 Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
@@ -33,6 +39,8 @@ Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; GroupDescripti
 ; 程序文件 -> Program Files\FreeIME11
 ; TSF DLL 常被输入法宿主（explorer/ctfmon/TextInputHost）加载，
 ; 升级时无法直接覆盖，用 restartreplace 安排重启后替换，否则会静默保留旧版。
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\NOTICE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\FreeIME11.dll"; DestDir: "{app}"; Flags: ignoreversion restartreplace uninsrestartdelete
 Source: "..\build\freeime11-migrate.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\freeime11-settings.exe"; DestDir: "{app}"; Flags: ignoreversion

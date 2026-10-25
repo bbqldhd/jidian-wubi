@@ -163,6 +163,22 @@ bash build_mingw.sh
 
 ## 许可
 
-- 引擎与工具源码来自 FreeWB，按 **Mulan PSL v2.0** 分发（见 `LICENSE`）。
-- 本项目新增的 Windows TSF 前端、会话层、迁移工具同样以 Mulan PSL v2.0 分发。
-- “极点五笔”名称与图标的权利归原作者，使用时请遵守相应授权。
+本项目以 **木兰宽松许可证，第 2 版（Mulan Permissive Software License, Version 2，Mulan PSL v2.0）** 开源，
+许可证全文见 [`LICENSE`](LICENSE)，第三方组件与来源说明见 [`NOTICE`](NOTICE)。
+
+```
+Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+FreeIME 11 is licensed under Mulan PSL v2.
+You can use this software according to the terms and conditions of the Mulan PSL v2.
+You may obtain a copy of Mulan PSL v2 at:
+            http://license.coscl.org.cn/MulanPSL2
+THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+See the Mulan PSL v2 for more details.
+```
+
+- 你可以自由使用、修改、分发本软件（含商业用途），但须保留版权与许可声明，并在分发时附上许可证副本。
+- `src/engine/`、`src/utils/` 中的引擎代码派生自 [FreeWB](https://gitee.com/openkylin/freewb)，版权归其贡献者所有，同样以 Mulan PSL v2.0 分发。
+- `third_party/spdlog` 为 MIT 许可；SQLite 为 Public Domain；libiconv 为 LGPL-2.1+（MinGW 运行库，静态链接）。详见 `NOTICE`。
+- 「极点五笔」「极点中文」名称与图标的权利归原作者所有；本项目为兼容性重制，与原作者无隶属关系。
