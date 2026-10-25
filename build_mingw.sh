@@ -37,10 +37,15 @@ echo "[5/6] 编译设置程序..."
   $UTILS src/win/settings_app/main.cpp \
   -liconv -lshell32 -luser32 -static -o build/freeime11-settings.exe
 
-echo "[6/6] 编译卸载程序..."
+echo "[6/7] 编译卸载程序..."
 "$GPP" $COMMON -DUNICODE -D_UNICODE -municode \
   src/win/uninstall/main.cpp \
   -lshell32 -luser32 -static -o build/freeime11-uninstall.exe
+
+echo "[7/7] 编译语言列表注册工具..."
+"$GPP" -std=c++17 -O2 -DUNICODE -D_UNICODE -municode \
+  src/win/addlang/main.cpp \
+  -lole32 -luuid -ladvapi32 -static -o build/freeime11-addlang.exe
 
 echo ""
 echo "构建完成："

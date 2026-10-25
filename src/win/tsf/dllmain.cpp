@@ -86,21 +86,21 @@ static HRESULT registerTextService() {
     setRegValue(HKEY_LOCAL_MACHINE, sub, L"IconIndex", L"0");
 
     // 4) 类别注册：键盘类别
-    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Item\\%s\\%s",
+    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s",
                clsid, FREEWB_CATEGORY_KEYBOARD, FREEWB_PROFILE_GUID);
     setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
 
     // 5) 现代能力位（UI 元素 / 系统托盘 / 沉浸式 UWP 支持）
     //    GUID_TFCAT_TIPCAP_UIELEMENTENABLED
-    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Item\\%s\\%s",
+    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s",
                clsid, L"{F4BAA7A3-DC22-4D68-9F17-2A3D46CB3B4D}", FREEWB_PROFILE_GUID);
     setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
     //    GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT
-    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Item\\%s\\%s",
+    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s",
                clsid, L"{25504FB4-7BAB-4BC1-9C69-CF81890F0EF5}", FREEWB_PROFILE_GUID);
     setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
     //    GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT
-    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Item\\%s\\%s",
+    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s",
                clsid, L"{13A016DF-560B-46CD-947A-4C3AF1E0E35D}", FREEWB_PROFILE_GUID);
     setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
 
@@ -164,5 +164,17 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void **ppv) {
 
 STDAPI DllCanUnloadNow() { return g_lDllRef == 0 ? S_OK : S_FALSE; }
 
-STDAPI DllRegisterServer() { return registerTextService(); }
-STDAPI DllUnregisterServer() { return unregisterTextService(); }
+STDAPI DllRegisterServer() {
+    // regsvr32 进程不保证已初始化 COM，ITfInputProcessorProfiles 需要 COM
+    const HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const HRESULT hr = registerTextService();
+    if (SUCCEEDED(hrInit)) CoUninitialize();
+    return hr;
+}
+
+STDAPI DllUnregisterServer() {
+    const HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const HRESULT hr = unregisterTextService();
+    if (SUCCEEDED(hrInit)) CoUninitialize();
+    return hr;
+}

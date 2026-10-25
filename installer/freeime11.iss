@@ -1,10 +1,10 @@
-﻿; FreeIME 11 —— Inno Setup 安装脚本（v11.0.1）
+﻿; FreeIME 11 —— Inno Setup 安装脚本（v11.0.2）
 ; 生成标准 Windows 安装包：向导界面 + 添加/删除程序注册 + 自动卸载 + TSF 自注册
 
 [Setup]
 AppId={{FreeIME11-11.0.1}
 AppName=极点五笔 11
-AppVersion=11.0.1
+AppVersion=11.0.2
 AppPublisher=FreeIME Project
 AppPublisherURL=https://github.com/bbqldhd/jidian-wubi
 AppSupportURL=https://gitee.com/red-egg-carrying-ice-cream/jidian-wubi
@@ -12,7 +12,7 @@ DefaultDirName={autopf}\FreeIME11
 DefaultGroupName=极点五笔 11
 DisableProgramGroupPage=yes
 OutputDir=..\build
-OutputBaseFilename=FreeIME11-11.0.1-setup
+OutputBaseFilename=FreeIME11-11.0.2-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -35,14 +35,19 @@ Source: "..\build\FreeIME11.dll"; DestDir: "{app}"; Flags: ignoreversion uninsre
 Source: "..\build\freeime11-migrate.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\freeime11-settings.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\freeime11-uninstall.exe"; DestDir: "{app}"; Flags: ignoreversion
-; 词库 -> %APPDATA%\FreeIME11\data
-Source: "..\..\upstream-freewb\data\mb\default\wbzx.mb"; DestDir: "{userappdata}\FreeIME11\data\mb\default"; Flags: ignoreversion
-Source: "..\..\upstream-freewb\data\mb\default\pinyin.mb"; DestDir: "{userappdata}\FreeIME11\data\mb\default"; Flags: ignoreversion
-Source: "..\..\upstream-freewb\data\dict\freeime_chinese_dict.db"; DestDir: "{userappdata}\FreeIME11\data"; Flags: ignoreversion
+Source: "..\build\freeime11-addlang.exe"; DestDir: "{app}"; Flags: ignoreversion
+; 词库 -> 先随程序安装，再由 addlang 按用户复制到 %APPDATA%（多用户各自可用）
+Source: "..\..\upstream-freewb\data\mb\default\wbzx.mb"; DestDir: "{app}\data\mb\default"; Flags: ignoreversion
+Source: "..\..\upstream-freewb\data\mb\default\pinyin.mb"; DestDir: "{app}\data\mb\default"; Flags: ignoreversion
+Source: "..\..\upstream-freewb\data\dict\freeime_chinese_dict.db"; DestDir: "{app}\data"; Flags: ignoreversion
 
 [Run]
 ; 注册 TSF 文本服务
 Filename: "regsvr32.exe"; Parameters: "/s ""{app}\FreeIME11.dll"""; Flags: runhidden; StatusMsg: "注册输入法..."
+; 将输入法加入当前用户语言列表（以原用户身份，确保写入正确的 HKCU）
+Filename: "{app}\freeime11-addlang.exe"; Flags: runhidden runasoriginaluser; StatusMsg: "添加输入法到语言列表..."
+; 打开语言设置，引导用户添加键盘（Windows 11 语言列表需用户确认一次）
+Filename: "ms-settings:regionlanguage"; Description: "打开语言设置，添加「极点五笔 11」"; Flags: postinstall shellexec nowait skipifsilent
 
 [UninstallRun]
 ; 注销 TSF 文本服务
@@ -55,7 +60,66 @@ Name: "{group}\卸载极点五笔 11"; Filename: "{app}\freeime11-uninstall.exe"
 Name: "{commondesktop}\极点五笔 11 设置"; Filename: "{app}\freeime11-settings.exe"; Tasks: desktopicon
 
 [Code]
+// 卸载时若 DLL 被输入法宿主占用，Inno 会登记「重启后删除」。
+// 这条记录会让下一次安装直接报「请先重启」，用户升级时极易卡住。
+// 这里在安装开始前只剔除指向 FreeIME11 的条目，其它软件的待删项原样保留。
+function PopToken(var Rest: String): String;
+var
+  P: Integer;
+begin
+  if Rest = '' then
+  begin
+    Result := '';
+    Exit;
+  end;
+  P := Pos(#0, Rest);
+  if P = 0 then
+  begin
+    Result := Rest;
+    Rest := '';
+  end
+  else
+  begin
+    Result := Copy(Rest, 1, P - 1);
+    Rest := Copy(Rest, P + 1, Length(Rest) - P);
+  end;
+end;
+
+procedure ClearOurPendingRename();
+var
+  Key, All, Rest, Keep, A, B: String;
+  Changed: Boolean;
+begin
+  Key := 'SYSTEM\CurrentControlSet\Control\Session Manager';
+  if not RegQueryMultiStringValue(HKLM, Key, 'PendingFileRenameOperations', All) then
+    Exit;
+
+  Rest := All;
+  Keep := '';
+  Changed := False;
+  while Rest <> '' do
+  begin
+    A := PopToken(Rest);
+    B := PopToken(Rest);
+    if (Pos('freeime11', Lowercase(A)) = 0) and (Pos('freeime11', Lowercase(B)) = 0) then
+      Keep := Keep + A + #0 + B + #0
+    else
+      Changed := True;
+  end;
+
+  if not Changed then
+    Exit;
+
+  // Keep 中每个条目对已自带结尾分隔符（源#0目标#0），不要裁掉，
+  // 否则最后一对的空目标会丢失，导致整个列表少一项。
+  if Keep = '' then
+    RegDeleteValue(HKLM, Key, 'PendingFileRenameOperations')
+  else
+    RegWriteMultiStringValue(HKLM, Key, 'PendingFileRenameOperations', Keep);
+end;
+
 function InitializeSetup(): Boolean;
 begin
+  ClearOurPendingRename();
   Result := True;
 end;
