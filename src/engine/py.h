@@ -44,6 +44,8 @@ public:
 private:
     void clearMbLoadState();
     void loadDictionary();
+    // 首次真正用到拼音时才解析词库：默认是五笔，切输入法时不该为拼音词库付启动成本
+    void ensureLoaded();
     void fillCandidatePayloadPrompts(const std::string &preedit, CandidatePayload &payload) const;
 
 private:
@@ -52,6 +54,7 @@ private:
     WubiPrimaryCodeLookupCallback wubiPrimaryCodeLookupCallback_;
     std::string inputCodes_;
     bool available_ = true;
+    bool loaded_ = false;
     CandidatePayload result_;
 };
 

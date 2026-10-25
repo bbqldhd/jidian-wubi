@@ -2,11 +2,13 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.0.4**。
+版本号 **11.0.8**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
 保持原版的按键逻辑、候选交互、配置项与用户词典语义不变，仅做现代 Windows 兼容适配。
+
+> 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
 
 ## 目录结构
 
@@ -22,7 +24,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序
-├── cmake/                   # 版本资源 11.0.4、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.0.8、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -63,7 +65,7 @@ bash build_mingw.sh
 
 ## 安装
 
-1. 运行 `FreeIME11-11.0.4-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+1. 运行 `FreeIME11-11.0.8-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
    写入「添加/删除程序」、创建开始菜单快捷方式）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
@@ -80,6 +82,51 @@ bash build_mingw.sh
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.0.8：选词后候选窗不收
+
+- **候选窗残留**：上屏路径 `commitText()` 只结束组合、从未隐藏候选窗。选完词后文字已进文档，
+  候选窗却一直挂在输入框下方，看起来像「没选中、还在输入」。现在上屏（含自动上屏、标点上屏）
+  立即收起候选窗，不等异步编辑会话执行。
+- **上屏改为「替换文字再结束组合」**：原来先把组合区间清空、`EndComposition()` 之后再在区间上
+  插入正文，属于「空组合 + 组合外插入」两步操作；部分应用会把这段插入当成未完成输入继续显示。
+  现在直接把组合区间里的编码串替换为最终文本，设置光标后一次 `EndComposition()`，文字自然留在
+  文档里，也不再依赖结束后的区间是否仍然有效。
+- **`GUID_PROP_COMPOSING` 清理**仅保留在无组合的降级路径（有组合时由 `EndComposition` 负责），
+  避免提前清属性导致应用把正文当成普通插入或重复提交。
+- **候选窗丢失 / 点击失效**：候选窗原本用 `DefWindowProcW` 当窗口过程，鼠标消息无人处理，
+  点击既选不中候选，也可能被系统默认处理牵走激活状态，导致文档失焦、组合终止、候选窗消失且
+  无法自行恢复。现在改用自定义窗口过程：`WM_MOUSEACTIVATE` 返回 `MA_NOACTIVATE`（点候选窗
+  不抢焦点）、窗口被销毁/隐藏后 `show()` 会自动重建并重新显示。
+- **鼠标点选候选**：窗口按布局缓存每个候选与翻页箭头的矩形，`WM_LBUTTONUP` 命中后回调
+  TSF 服务，走与键盘选词完全相同的上屏流程（`selectCandidateOnPage` / `pageCandidates`）。
+- **悬停反馈**：`WM_MOUSEMOVE` 命中候选时画淡蓝底 + 淡边框，翻页箭头同样高亮，并切换手型
+  光标；`WM_MOUSELEAVE` 清除悬停态。
+- **↑/↓ 与 PageUp/PageDown**：组字中 ↑/↓ 在当前页内移动高亮（空格/回车上屏高亮项），
+  PageUp/PageDown 翻页并回到页首；长按可连续移动（不再被「忽略重复键」挡掉）。
+
+## v11.0.7：上屏残留与切换响应
+
+- **选词后编码串残留**：`ITfComposition::EndComposition()` 只解除组合、**不会删除组合区间里的文字**
+  （官方文档明确：仅移除 `GUID_PROP_COMPOSING`）。旧实现上屏时直接 End，`wqvb` 这类编码就留在
+  文档里。现在上屏/取消前先对组合区间 `SetText("")` 再 `Collapse(START)`，随后结束组合并在该位置
+  插入最终文本，最后把光标移到插入内容之后。
+- **编辑会话数据串扰**：原先服务对象自己兼作 `ITfEditSession`，`RequestEditSession` 排队期间字段会被
+  后续按键覆盖，旧会话可能拿新数据重放（重复上屏/把已清掉的编码写回）。现在每次请求创建独立的
+  `EditRequest` 快照对象。
+- **切换输入法后迟迟不响应**：`context_` 只在 `ITfThreadMgrEventSink::OnSetFocus` 赋值，而切换输入法
+  时服务往往在焦点建立之后才激活，收不到该回调 → `context_` 为空，按键被判定为「要处理」并吃掉，
+  却没有任何编辑会话可执行。现在 `Activate` 主动 `GetFocus()` 接管上下文；`OnKeyDown` 一律以实际
+  收到按键的 `ITfContext` 为准；`OnPopContext`（关闭模态框等）后重新接管焦点。
+- **启动开销**：拼音词库（8 MB）改为首次真正输入拼音时才解析，切换输入法的服务初始化从
+  约 215 ms 降到约 55 ms（同一台机器、热缓存）。
+
+## v11.0.6：按键归属
+
+- **按键不再被无条件吃掉**：新增 `Session::wantsKey()`，空闲态的空格/回车/退格/Esc/Tab/数字交给
+  应用处理；只有组字中才接管编辑键。之前这些键被吞，表现为「好多按键都不对」。
+- **Ctrl/Alt/Win 组合一律放行**（修复 `Ctrl+空格` 切不了输入法）；英文态整键透传，不再自行插字符
+  破坏快捷键与自动补全。
 
 ## v11.0.5：上屏与组字定位
 

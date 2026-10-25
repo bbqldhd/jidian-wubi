@@ -17,6 +17,10 @@ echo "[1/5] 编译会话冒烟测试..."
 "$GPP" $COMMON $UTILS $ENGINE src/session/session.cpp tests/session_test.cpp \
   -liconv -o build/session_test.exe
 
+echo "[1b] 编译候选窗自测（显示/命中/悬停/点选）..."
+"$GPP" -std=c++17 -O2 -DUNICODE -D_UNICODE -Isrc/win/tsf tests/candidate_window_test.cpp \
+  src/win/tsf/CandidateWindow.cpp -lgdiplus -lgdi32 -luser32 -static -o build/candidate_window_test.exe
+
 echo "[2/5] 编译版本资源..."
 "$WINDRES" -O coff --preprocessor="gcc -E -xc-header -DRC_INVOKED" installer/version.rc -o build/version.o
 

@@ -28,7 +28,6 @@ class FreeIME11Service final
     : public ITfTextInputProcessor,
       public ITfKeyEventSink,
       public ITfThreadMgrEventSink,
-      public ITfEditSession,
       public ITfCompositionSink {
 public:
     FreeIME11Service();
@@ -58,9 +57,6 @@ public:
     STDMETHODIMP OnPushContext(ITfContext *pic) override;
     STDMETHODIMP OnPopContext(ITfContext *pic) override;
 
-    // ITfEditSession
-    STDMETHODIMP DoEditSession(TfEditCookie ec) override;
-
     // ITfCompositionSink
     STDMETHODIMP OnCompositionTerminated(TfEditCookie ecWrite, ITfComposition *pComposition) override;
 
@@ -71,13 +67,59 @@ private:
         ES_Clear,
     };
 
+    // 每次编辑请求都建一个独立的编辑会话对象，把数据快照带进去。
+    // 旧实现把 this 同时当 ITfEditSession 用：context 里排队的旧会话执行时读到的是
+    // 后来覆盖的字段，可能重复上屏、也可能把已经清掉的编码重新写回文档（残留）。
+    class EditRequest final : public ITfEditSession {
+    public:
+        EditRequest(FreeIME11Service *owner, EditSessionType type, std::string commitUtf8,
+                    std::string preeditUtf8, std::vector<std::wstring> cands, int cursor, bool hasPrev,
+                    bool hasNext, std::string aux, ITfComposition *target = nullptr);
+        ~EditRequest();
+
+        STDMETHODIMP QueryInterface(REFIID riid, void **ppvObj) override;
+        STDMETHODIMP_(ULONG) AddRef() override;
+        STDMETHODIMP_(ULONG) Release() override;
+        STDMETHODIMP DoEditSession(TfEditCookie ec) override;
+
+    private:
+        LONG ref_ = 1;
+        FreeIME11Service *owner_ = nullptr;
+        EditSessionType type_ = ES_Clear;
+        std::string commitUtf8_;
+        std::string preeditUtf8_;
+        std::vector<std::wstring> cands_;
+        int cursor_ = 0;
+        bool hasPrev_ = false;
+        bool hasNext_ = false;
+        std::string aux_;
+        // ES_Clear 专用：发起请求时的组合对象。异步执行时全局状态可能已经变了，
+        // 带上引用才能保证一定清掉当初那串编码。
+        ITfComposition *target_ = nullptr;
+    };
+
     BOOL isComposing() const;
+    // 把会话结果落到编辑会话（按键与鼠标点选共用）
+    void dispatchOutcome(const freeime11::SessionOutcome &out);
+    // 候选窗鼠标回调
+    void onCandidateSelected(int index);
+    void onCandidatePage(int delta);
     HRESULT requestEdit(EditSessionType type, const std::string &textUtf8, const std::string &preeditUtf8,
                         const std::vector<std::wstring> &cands, int cursor = 0, bool hasPrev = false,
                         bool hasNext = false, const std::string &aux = std::string());
+    void applyEdit(TfEditCookie ec, EditSessionType type, const std::string &commitUtf8,
+                   const std::string &preeditUtf8, const std::vector<std::wstring> &cands, int cursor, bool hasPrev,
+                   bool hasNext, const std::string &aux, ITfComposition *target);
+    // 清空并结束指定组合（不改变引用计数）；target 为空时用当前 composition_
+    void closeComposition(TfEditCookie ec, ITfComposition *target);
     HRESULT commitText(TfEditCookie ec, const std::string &utf8);
-    HRESULT updateComposition(TfEditCookie ec, const std::string &preeditUtf8, const std::vector<std::wstring> &cands);
+    HRESULT updateComposition(TfEditCookie ec, const std::string &preeditUtf8, const std::vector<std::wstring> &cands,
+                              int cursor, bool hasPrev, bool hasNext, const std::string &aux);
     HRESULT terminateComposition(TfEditCookie ec);
+    // 切换/接管上下文：始终以实际收到按键的 context 为准
+    void adoptContext(ITfContext *pic);
+    // 在指定上下文里同步清掉残留组合（焦点切换前调用；同步失败退化异步）
+    void clearCompositionOn(ITfContext *ctx);
     // 取插入符位置（屏幕坐标，左下方）；失败返回 false
     bool caretScreenPos(TfEditCookie ec, POINT &pt) const;
     // 取插入符所在范围（调用方负责 Release）；失败返回 false
@@ -95,15 +137,6 @@ private:
     bool compositionStarted_ = false;
     // 该上下文不支持 TSF 组合（终端、部分 Electron 应用）：降级为只出候选窗、直接上屏
     bool compositionUnsupported_ = false;
-
-    EditSessionType editType_ = ES_Clear;
-    std::string editCommitText_;
-    std::string editPreeditText_;
-    std::vector<std::wstring> editCands_;
-    int editCursor_ = 0;
-    bool editHasPrev_ = false;
-    bool editHasNext_ = false;
-    std::string editAux_;
 
     std::unique_ptr<freeime11::Session> session_;
 };

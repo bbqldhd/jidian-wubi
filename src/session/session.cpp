@@ -69,6 +69,7 @@ struct Session::Impl {
     CandidatePayload cand_;   // 引擎最近一次候选
     int pageIndex_ = 0;
     int pageSize_ = 5;
+    int candCursor_ = 0;      // 当前页内高亮候选（0 起），↑/↓ 移动
     bool englishMode_ = false; // 中英文态（false=中文输入）
     bool commitExactPending_ = false;
 
@@ -96,6 +97,7 @@ struct Session::Impl {
         if (cur()) cur()->putKey(inputCode_.c_str());
         cand_ = cur() ? cur()->getResult() : CandidatePayload{};
         pageIndex_ = 0;
+        candCursor_ = 0;
     }
 
     void resetSession() {
@@ -105,6 +107,7 @@ struct Session::Impl {
         tempEngPrefix_.clear();
         cand_ = CandidatePayload{};
         pageIndex_ = 0;
+        candCursor_ = 0;
         commitExactPending_ = false;
         if (cur()) cur()->reset();
     }
@@ -123,6 +126,39 @@ struct Session::Impl {
     void pageRange(int &begin, int &end) const {
         begin = pageIndex_ * pageSize_;
         end = std::min<int>(begin + pageSize_, cand_.texts.size());
+    }
+
+    // 把高亮游标限制在当前页内
+    void clampCursor() {
+        int b = 0, e = 0;
+        pageRange(b, e);
+        const int n = e - b;
+        if (n <= 0) { candCursor_ = 0; return; }
+        if (candCursor_ < 0) candCursor_ = 0;
+        if (candCursor_ >= n) candCursor_ = n - 1;
+    }
+
+    // 当前高亮候选的全局下标
+    int currentCandidateIndex() const { return pageIndex_ * pageSize_ + candCursor_; }
+
+    // 组装 preedit / 候选页（processKey 尾部、翻页与鼠标选词共用）
+    void fillOutcome(SessionOutcome &out) {
+        out.state = state;
+        out.englishMode = englishMode_;
+        if (state == SessionState::Idle || inputCode_.empty()) return;
+
+        out.preedit = lead_ + inputCode_;
+        out.handled = true;
+        int b = 0, e = 0;
+        pageRange(b, e);
+        for (int i = b; i < e; ++i) {
+            out.cands.push_back(cand_.texts[i]);
+            out.candPrompts.push_back(i < static_cast<int>(cand_.prompts.size()) ? cand_.prompts[i] : std::string());
+            out.candCodes.push_back(i < static_cast<int>(cand_.fullCodes.size()) ? cand_.fullCodes[i] : std::string());
+        }
+        out.candHasPrev = pageIndex_ > 0;
+        out.candHasNext = pageIndex_ + 1 < pageCount();
+        out.candCursor = candCursor_;
     }
 };
 
@@ -235,13 +271,8 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
         return out;
     }
 
-    // 英文态：直接输出
+    // 英文态：整键交给应用处理，输入法不吞键（自己插字符会破坏快捷键与自动补全）
     if (im.englishMode_ && im.state == SessionState::Idle) {
-        char c = vkToCodeChar(vk, shift);
-        if (c && !ctrl && !alt) {
-            out.commitText.assign(1, c);
-            out.handled = true;
-        }
         return out;
     }
 
@@ -298,6 +329,13 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
         return out;
     }
 
+    // 空闲态（无编码）：这些键属于应用，输入法不能吃
+    if (im.inputCode_.empty() && im.state == SessionState::Idle) {
+        if (vk == VK_SPACE || vk == VK_RETURN || vk == VK_BACK || vk == VK_ESCAPE || vk == VK_TAB) {
+            return out;   // handled = false
+        }
+    }
+
     // 临时生僻字（` 引导，GBK）与临时拼音（z 引导）
     const bool tmpPinyin = !im.inputCode_.empty() && im.inputCode_[0] == 'z' && im.isWubiFamily();
 
@@ -317,18 +355,48 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
         break;
 
     case VK_RETURN: {
-        // 回车：清空编码（EnterFunction=0 默认）
+        // 回车：有候选时上屏当前高亮候选（↑/↓ 选中的那个），否则清空编码
+        if (!im.cand_.texts.empty()) {
+            int b = 0, e = 0; im.pageRange(b, e);
+            const int idx = b + im.candCursor_;
+            out.commitText = im.applyTrad(im.cand_.texts[idx < e ? idx : b]);
+        }
         im.resetSession();
         out.handled = true; out.state = im.state;
         break;
     }
 
+    case VK_UP:
+    case VK_DOWN:
+    case VK_PRIOR:
+    case VK_NEXT: {
+        // ↑/↓ 在当前页内移动高亮；PageUp/PageDown 翻页
+        if (im.cand_.texts.empty()) { out.handled = true; out.state = im.state; break; }
+
+        int b = 0, e = 0; im.pageRange(b, e);
+        const int n = e - b;
+        switch (vk) {
+        case VK_UP:    im.candCursor_ = std::max(0, im.candCursor_ - 1); break;
+        case VK_DOWN:  im.candCursor_ = std::min(n - 1, im.candCursor_ + 1); break;
+        case VK_PRIOR:
+            if (im.pageIndex_ > 0) { --im.pageIndex_; im.candCursor_ = 0; }
+            break;
+        case VK_NEXT:
+            if (im.pageIndex_ + 1 < im.pageCount()) { ++im.pageIndex_; im.candCursor_ = 0; }
+            break;
+        default: break;
+        }
+        im.clampCursor();
+        out.handled = true; out.state = im.state;
+        break;
+    }
+
     case VK_SPACE: {
-        // 空格：选择首候选（有候选时）；无候选且空码→上屏空格
+        // 空格：上屏当前高亮候选（默认第一个）；无候选且空码→上屏空格
         if (!im.cand_.texts.empty()) {
             int b = 0, e = 0; im.pageRange(b, e);
-            const int idx = b;
-            out.commitText = im.applyTrad(im.cand_.texts[idx]);
+            const int idx = b + im.candCursor_;
+            out.commitText = im.applyTrad(im.cand_.texts[idx < e ? idx : b]);
             im.resetSession();
         } else if (im.inputCode_.empty()) {
             out.commitText = fullShape() ? "　" : " ";
@@ -363,8 +431,8 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
             im.resetSession(); out.handled = true; out.state = im.state; return out;
         }
         // 翻页 - / =
-        if (c == '-') { if (im.pageIndex_ > 0) { --im.pageIndex_; out.handled = true; } }
-        else if (c == '=') { if (im.pageIndex_ + 1 < im.pageCount()) { ++im.pageIndex_; out.handled = true; } }
+        if (c == '-') { if (im.pageIndex_ > 0) { --im.pageIndex_; im.candCursor_ = 0; out.handled = true; } }
+        else if (c == '=') { if (im.pageIndex_ + 1 < im.pageCount()) { ++im.pageIndex_; im.candCursor_ = 0; out.handled = true; } }
         else if (c && isLetterCode(c)) {
             // 编码输入
             im.inputCode_.push_back(c);
@@ -386,6 +454,9 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
                     return out;
                 }
             }
+        } else if (c && isDigit(c)) {
+            // 空闲态的数字不做标点转换，交给应用
+            return out;
         } else if (c) {
             // 标点：有候选→顶字上屏；无候选→标点转换
             std::string candText;
@@ -406,21 +477,53 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
     }
 
     // 组装输出：preedit / 候选
-    if (im.state != SessionState::Idle && !im.inputCode_.empty()) {
-        out.preedit = im.lead_ + im.inputCode_;
-        out.handled = true;
-        int b = 0, e = 0; im.pageRange(b, e);
-        for (int i = b; i < e; ++i) {
-            out.cands.push_back(im.cand_.texts[i]);
-            out.candPrompts.push_back(i < static_cast<int>(im.cand_.prompts.size()) ? im.cand_.prompts[i] : std::string());
-            out.candCodes.push_back(i < static_cast<int>(im.cand_.fullCodes.size()) ? im.cand_.fullCodes[i] : std::string());
-        }
-        out.candHasPrev = im.pageIndex_ > 0;
-        out.candHasNext = im.pageIndex_ + 1 < im.pageCount();
-        out.state = im.state;
-    }
-    out.englishMode = im.englishMode_;
+    im.fillOutcome(out);
     return out;
+}
+
+bool Session::wantsKey(int vk, bool shift, bool ctrl, bool alt) const {
+    auto &im = *impl_;
+
+    // 系统快捷键一律放行：Ctrl/Alt/Win 组合不归输入法（否则 Ctrl+空格 切不了输入法）
+    if (ctrl || alt) return false;
+    if (::GetKeyState(VK_LWIN) & 0x8000) return false;
+    if (::GetKeyState(VK_RWIN) & 0x8000) return false;
+
+    const bool composing = (im.state != SessionState::Idle) && !im.inputCode_.empty();
+
+    if (composing) {
+        // 组字中：编码字符、候选选择键、翻页键、编辑键
+        if (vk == VK_BACK || vk == VK_RETURN || vk == VK_ESCAPE || vk == VK_SPACE) return true;
+        if (vk == VK_UP || vk == VK_DOWN || vk == VK_PRIOR || vk == VK_NEXT) return true;
+        if ((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9')) return true;
+        switch (vk) {
+        case VK_OEM_MINUS: case VK_OEM_PLUS: case VK_OEM_1: case VK_OEM_7:
+        case VK_OEM_PERIOD: case VK_OEM_COMMA: case VK_OEM_2: case VK_OEM_3:
+        case VK_OEM_4: case VK_OEM_5: case VK_OEM_6:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    // 空闲 + 英文态：全部放行
+    if (im.englishMode_) return false;
+
+    // 空闲：只有小写字母起编码；Shift+字母留给应用（大写输入/快捷键）
+    if (vk >= 'A' && vk <= 'Z') return !shift;
+
+    // 空闲：数字不归输入法
+    if (vk >= '0' && vk <= '9') return false;
+
+    // 空闲：中文标点转换
+    switch (vk) {
+    case VK_OEM_COMMA: case VK_OEM_PERIOD: case VK_OEM_1: case VK_OEM_7:
+    case VK_OEM_2: case VK_OEM_3: case VK_OEM_4: case VK_OEM_5: case VK_OEM_6:
+    case VK_OEM_MINUS: case VK_OEM_PLUS:
+        return true;
+    default:
+        return false;
+    }
 }
 
 SessionOutcome Session::selectCandidate(int index) {
@@ -433,6 +536,30 @@ SessionOutcome Session::selectCandidate(int index) {
     out.state = im.state;
     out.englishMode = im.englishMode_;
     out.handled = true;
+    return out;
+}
+
+SessionOutcome Session::selectCandidateOnPage(int index) {
+    auto &im = *impl_;
+    const int base = im.pageIndex_ * im.pageSize_;
+    return selectCandidate(base + index);
+}
+
+SessionOutcome Session::pageCandidates(int delta) {
+    auto &im = *impl_;
+    SessionOutcome out;
+    if (im.state == SessionState::Idle || im.inputCode_.empty() || im.cand_.texts.empty() || delta == 0) {
+        return out;
+    }
+
+    int page = im.pageIndex_ + delta;
+    if (page < 0) page = 0;
+    if (page >= im.pageCount()) page = im.pageCount() - 1;
+    if (page == im.pageIndex_) return out;
+
+    im.pageIndex_ = page;
+    im.candCursor_ = 0;
+    im.fillOutcome(out);
     return out;
 }
 

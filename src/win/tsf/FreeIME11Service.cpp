@@ -4,6 +4,7 @@
 #include "CandidateWindow.h"
 
 #include <cassert>
+#include <new>
 
 #include "../../utils/utils.h"
 
@@ -24,11 +25,59 @@ bool isAltDown() { return (::GetKeyState(VK_MENU) & 0x8000) != 0; }
 
 } // namespace
 
+// ---------------------------------------------------------------- EditRequest
+
+FreeIME11Service::EditRequest::EditRequest(FreeIME11Service *owner, EditSessionType type, std::string commitUtf8,
+                                           std::string preeditUtf8, std::vector<std::wstring> cands, int cursor,
+                                           bool hasPrev, bool hasNext, std::string aux, ITfComposition *target)
+    : owner_(owner), type_(type), commitUtf8_(std::move(commitUtf8)), preeditUtf8_(std::move(preeditUtf8)),
+      cands_(std::move(cands)), cursor_(cursor), hasPrev_(hasPrev), hasNext_(hasNext), aux_(std::move(aux)),
+      target_(target) {
+    if (owner_) owner_->AddRef();
+    if (target_) target_->AddRef();
+}
+
+FreeIME11Service::EditRequest::~EditRequest() {
+    if (target_) target_->Release();
+    if (owner_) owner_->Release();
+}
+
+STDMETHODIMP FreeIME11Service::EditRequest::QueryInterface(REFIID riid, void **ppvObj) {
+    if (!ppvObj) return E_INVALIDARG;
+    *ppvObj = nullptr;
+    if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_ITfEditSession)) {
+        *ppvObj = static_cast<ITfEditSession *>(this);
+        AddRef();
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+
+STDMETHODIMP_(ULONG) FreeIME11Service::EditRequest::AddRef() { return ::InterlockedIncrement(&ref_); }
+
+STDMETHODIMP_(ULONG) FreeIME11Service::EditRequest::Release() {
+    const LONG r = ::InterlockedDecrement(&ref_);
+    if (r == 0) delete this;
+    return r;
+}
+
+STDMETHODIMP FreeIME11Service::EditRequest::DoEditSession(TfEditCookie ec) {
+    if (owner_)
+        owner_->applyEdit(ec, type_, commitUtf8_, preeditUtf8_, cands_, cursor_, hasPrev_, hasNext_, aux_, target_);
+    return S_OK;
+}
+
+// ---------------------------------------------------------------- 构造/析构
+
 FreeIME11Service::FreeIME11Service() : session_(new freeime11::Session()) {
     session_->loadSettings(freewb::userFreewbPath());
 }
 
 FreeIME11Service::~FreeIME11Service() {
+    // 候选窗是进程级单例，销毁前必须摘掉指向本对象的回调，避免悬空指针
+    CandidateWindow::instance().setHandlers(nullptr, nullptr);
+    if (composition_) composition_->Release();
+    if (contextComposition_) contextComposition_->Release();
     if (context_) context_->Release();
 }
 
@@ -42,8 +91,6 @@ STDMETHODIMP FreeIME11Service::QueryInterface(REFIID riid, void **ppvObj) {
         *ppvObj = static_cast<ITfKeyEventSink *>(this);
     } else if (IsEqualIID(riid, IID_ITfThreadMgrEventSink)) {
         *ppvObj = static_cast<ITfThreadMgrEventSink *>(this);
-    } else if (IsEqualIID(riid, IID_ITfEditSession)) {
-        *ppvObj = static_cast<ITfEditSession *>(this);
     } else if (IsEqualIID(riid, IID_ITfCompositionSink)) {
         *ppvObj = static_cast<ITfCompositionSink *>(this);
     } else {
@@ -76,11 +123,32 @@ STDMETHODIMP FreeIME11Service::Activate(ITfThreadMgr *pThreadMgr, TfClientId tfC
         pSource->AdviseSink(IID_ITfThreadMgrEventSink, static_cast<ITfThreadMgrEventSink *>(this), &cookieThreadMgrEventSink_);
         pSource->Release();
     }
+
+    // 激活时焦点通常已经建立，之后不会再收到 OnSetFocus。
+    // 这里主动接管一次当前焦点上下文，否则 context_ 为空 → 按键被吃掉却无处上屏，
+    // 表现就是“刚切过来打字没反应，点一下编辑框才好”。
+    ITfDocumentMgr *pdim = nullptr;
+    if (SUCCEEDED(threadMgr_->GetFocus(&pdim)) && pdim) {
+        ITfContext *pic = nullptr;
+        if (SUCCEEDED(pdim->GetTop(&pic)) && pic) {
+            adoptContext(pic);
+            pic->Release();
+        }
+        pdim->Release();
+    }
+
+    // 候选窗鼠标点选 / 翻页箭头
+    CandidateWindow::instance().setHandlers(
+        [this](int index) { onCandidateSelected(index); },
+        [this](int delta) { onCandidatePage(delta); });
     return S_OK;
 }
 
 STDMETHODIMP FreeIME11Service::Deactivate() {
     CandidateWindow::instance().hide();
+    // 切走输入法时如果还在组字，先把编码串从文档里清掉（EndComposition 不会删除文字）
+    if (context_ && composition_) clearCompositionOn(context_);
+
     ITfKeystrokeMgr *pKeystrokeMgr = nullptr;
     if (threadMgr_ && SUCCEEDED(threadMgr_->QueryInterface(IID_ITfKeystrokeMgr, (void **)&pKeystrokeMgr))) {
         pKeystrokeMgr->UnadviseKeyEventSink(tfClientId_);
@@ -96,6 +164,8 @@ STDMETHODIMP FreeIME11Service::Deactivate() {
     }
     cookieThreadMgrEventSink_ = TF_INVALID_COOKIE;
 
+    if (composition_) { composition_->Release(); composition_ = nullptr; compositionStarted_ = false; }
+    if (contextComposition_) { contextComposition_->Release(); contextComposition_ = nullptr; }
     if (context_) { context_->Release(); context_ = nullptr; }
     threadMgr_ = nullptr;
     tfClientId_ = TF_CLIENTID_NULL;
@@ -105,44 +175,80 @@ STDMETHODIMP FreeIME11Service::Deactivate() {
 // ITfKeyEventSink
 STDMETHODIMP FreeIME11Service::OnKeyDown(ITfContext *pic, WPARAM wParam, LPARAM lParam, BOOL *pfEaten) {
     *pfEaten = FALSE;
-    if (lParam & 0x40000000) return S_OK; // 忽略重复
+    const int vk = static_cast<int>(wParam);
+    // 忽略系统重复键，但候选导航键允许长按连续移动
+    if (lParam & 0x40000000) {
+        const bool nav = (vk == VK_UP || vk == VK_DOWN || vk == VK_PRIOR || vk == VK_NEXT);
+        if (!nav) return S_OK;
+    }
+
+    // 始终以实际收到按键的 context 为准：切换应用/切换输入法后 OnSetFocus 可能没送到，
+    // 旧的 context_ 会指向已经失焦的文档，导致编辑请求失败（按键吞掉却没反应）。
+    if (pic) adoptContext(pic);
 
     const bool shift = isShiftDown(), ctrl = isCtrlDown(), alt = isAltDown();
-    freeime11::SessionOutcome out = session_->processKey(static_cast<int>(wParam), shift, ctrl, alt);
 
-    if (out.commitText.empty() && out.preedit.empty() && !out.handled) {
+    // 右 Shift 切中英：只切换、不吞键（吞掉会破坏应用里的 Shift 组合）
+    if (vk == VK_RSHIFT && shift && !ctrl && !alt) {
+        session_->toggleEnglish();
         return S_OK;
     }
 
-    if (!out.commitText.empty()) {
-        requestEdit(ES_Commit, out.commitText, "", {});
-    } else if (!out.preedit.empty()) {
-        std::vector<std::wstring> wide;
-        wide.reserve(out.cands.size());
-        for (auto &c : out.cands) wide.push_back(Utf8ToWide(c));
-        requestEdit(ES_UpdatePreedit, "", out.preedit, wide, out.candCursor, out.candHasPrev, out.candHasNext,
-                    out.auxText);
-    } else {
-        requestEdit(ES_Clear, "", "", {});
-    }
+    // 不该归输入法的键直接放行：Ctrl/Alt/Win 组合、空闲态的空格/回车/退格/数字等
+    if (!session_->wantsKey(vk, shift, ctrl, alt)) return S_OK;
+
+    freeime11::SessionOutcome out = session_->processKey(vk, shift, ctrl, alt);
+    dispatchOutcome(out);
 
     if (out.handled) *pfEaten = TRUE;
     return S_OK;
 }
 
+void FreeIME11Service::dispatchOutcome(const freeime11::SessionOutcome &out) {
+    if (out.commitText.empty() && out.preedit.empty() && !out.handled) return;
+
+    if (!out.commitText.empty()) {
+        // 先收候选窗：编辑会话是异步的，等它执行完再收会有明显延迟
+        CandidateWindow::instance().hide();
+        requestEdit(ES_Commit, out.commitText, "", {});
+        return;
+    }
+
+    if (!out.preedit.empty()) {
+        std::vector<std::wstring> wide;
+        wide.reserve(out.cands.size());
+        for (auto &c : out.cands) wide.push_back(Utf8ToWide(c));
+        requestEdit(ES_UpdatePreedit, "", out.preedit, wide, out.candCursor, out.candHasPrev, out.candHasNext,
+                    out.auxText);
+        return;
+    }
+
+    requestEdit(ES_Clear, "", "", {});
+}
+
+void FreeIME11Service::onCandidateSelected(int index) {
+    // 点选候选：窗口先收起（编辑会话是异步的），再走与键盘选词相同的上屏流程
+    freeime11::SessionOutcome out = session_->selectCandidateOnPage(index);
+    if (!out.commitText.empty()) CandidateWindow::instance().hide();
+    dispatchOutcome(out);
+}
+
+void FreeIME11Service::onCandidatePage(int delta) {
+    // 翻页：编辑会话会带着新一页候选重新调用 show()，悬停态由窗口自己按新布局重算
+    dispatchOutcome(session_->pageCandidates(delta));
+}
+
 STDMETHODIMP FreeIME11Service::OnKeyUp(ITfContext *, WPARAM, LPARAM, BOOL *) { return S_OK; }
 
-STDMETHODIMP FreeIME11Service::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *pfEaten) {
+STDMETHODIMP FreeIME11Service::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM, BOOL *pfEaten) {
     *pfEaten = FALSE;
     const int vk = static_cast<int>(wParam);
-    const bool shift = isShiftDown();
-    if ((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9') || vk == VK_SPACE || vk == VK_BACK ||
-        vk == VK_RETURN || vk == VK_ESCAPE || vk == VK_OEM_MINUS || vk == VK_OEM_PLUS ||
-        vk == VK_OEM_1 || vk == VK_OEM_7 || vk == VK_OEM_PERIOD || vk == VK_OEM_COMMA ||
-        vk == VK_OEM_2 || vk == VK_OEM_3 || vk == VK_OEM_4 || vk == VK_OEM_5 || vk == VK_OEM_6) {
-        *pfEaten = TRUE;
-    }
-    if (shift && vk == VK_RSHIFT) *pfEaten = TRUE;
+    const bool shift = isShiftDown(), ctrl = isCtrlDown(), alt = isAltDown();
+
+    // 右 Shift 只用于切换，不吞（与 OnKeyDown 保持一致）
+    if (vk == VK_RSHIFT) return S_OK;
+
+    *pfEaten = session_->wantsKey(vk, shift, ctrl, alt) ? TRUE : FALSE;
     return S_OK;
 }
 
@@ -156,26 +262,20 @@ STDMETHODIMP FreeIME11Service::OnUninitDocumentMgr(ITfDocumentMgr *) { return S_
 
 STDMETHODIMP FreeIME11Service::OnSetFocus(ITfDocumentMgr *pdimFocus, ITfDocumentMgr *) {
     CandidateWindow::instance().hide();
-    requestEdit(ES_Clear, "", "", {});
-    if (pdimFocus) {
-        ITfContext *pic = nullptr;
-        if (SUCCEEDED(pdimFocus->GetTop(&pic)) && pic) {
-            if (context_) context_->Release();
-            context_ = pic;
-            if (contextComposition_) contextComposition_->Release();
-            contextComposition_ = nullptr;
-            context_->QueryInterface(IID_ITfContextComposition, (void **)&contextComposition_);
-            compositionUnsupported_ = false;
-            session_->reset();
-        }
+    // 切走前把旧文档里的组合文本清干净（EndComposition 本身不会删除文字）
+    if (context_ && composition_) clearCompositionOn(context_);
+
+    ITfContext *pic = nullptr;
+    if (pdimFocus && SUCCEEDED(pdimFocus->GetTop(&pic)) && pic) {
+        adoptContext(pic);
+        pic->Release();
     }
+    session_->reset();
     return S_OK;
 }
 
 STDMETHODIMP FreeIME11Service::OnPushContext(ITfContext *pic) {
-    if (context_) context_->Release();
-    context_ = pic;
-    if (context_) context_->AddRef();
+    if (pic) adoptContext(pic);
     return S_OK;
 }
 
@@ -185,57 +285,127 @@ STDMETHODIMP FreeIME11Service::OnPopContext(ITfContext *pic) {
         context_->Release();
         context_ = nullptr;
     }
-    return S_OK;
-}
-
-// ITfEditSession
-STDMETHODIMP FreeIME11Service::DoEditSession(TfEditCookie ec) {
-    switch (editType_) {
-    case ES_Commit:
-        commitText(ec, editCommitText_);
-        break;
-    case ES_UpdatePreedit:
-        updateComposition(ec, editPreeditText_, editCands_);
-        break;
-    case ES_Clear:
-        terminateComposition(ec);
-        break;
+    // 弹出（例如关闭模态框）后必须重新接管当前焦点上下文，否则之后所有编辑请求都失败，
+    // 输入法看起来就是“卡住不响应”，直到用户重新点一下编辑框。
+    if (threadMgr_) {
+        ITfDocumentMgr *pdim = nullptr;
+        if (SUCCEEDED(threadMgr_->GetFocus(&pdim)) && pdim) {
+            ITfContext *focus = nullptr;
+            if (SUCCEEDED(pdim->GetTop(&focus)) && focus) {
+                adoptContext(focus);
+                focus->Release();
+            }
+            pdim->Release();
+        }
     }
+    session_->reset();
     return S_OK;
 }
 
 // ITfCompositionSink
 STDMETHODIMP FreeIME11Service::OnCompositionTerminated(TfEditCookie, ITfComposition *pComposition) {
+    // 我们自己结束组合时会先把 composition_ 摘钩，此时不需要动会话状态：
+    // 用户可能已经在排队中的下一键里开始了新编码，重置会把那串编码吞掉。
     if (composition_ == pComposition) {
         composition_->Release();
         composition_ = nullptr;
         compositionStarted_ = false;
+        // 应用自己结束了组合（点击别处、切文档等）：丢弃会话状态，避免下一键接着旧编码
+        session_->reset();
     }
+    CandidateWindow::instance().hide();
     return S_OK;
 }
 
 BOOL FreeIME11Service::isComposing() const { return composition_ != nullptr; }
 
+// ---------------------------------------------------------------- 编辑请求
+
 HRESULT FreeIME11Service::requestEdit(EditSessionType type, const std::string &textUtf8, const std::string &preeditUtf8,
                                       const std::vector<std::wstring> &cands, int cursor, bool hasPrev,
                                       bool hasNext, const std::string &aux) {
     if (!context_) return E_FAIL;
-    editType_ = type;
-    editCommitText_ = textUtf8;
-    editPreeditText_ = preeditUtf8;
-    editCands_ = cands;
-    editCursor_ = cursor;
-    editHasPrev_ = hasPrev;
-    editHasNext_ = hasNext;
-    editAux_ = aux;
 
-    HRESULT hr = E_FAIL;
-    ITfEditSession *pSession = nullptr;
-    if (SUCCEEDED(QueryInterface(IID_ITfEditSession, (void **)&pSession))) {
-        hr = context_->RequestEditSession(tfClientId_, pSession, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, &hr);
-        pSession->Release();
+    // ES_Clear 需要清掉“发起这一次请求时的”组合：异步执行时 composition_ 可能已经被换掉了
+    ITfComposition *target = (type == ES_Clear) ? composition_ : nullptr;
+
+    EditRequest *req = new (std::nothrow) EditRequest(this, type, textUtf8, preeditUtf8, cands, cursor, hasPrev, hasNext,
+                                                     aux, target);
+    if (!req) return E_OUTOFMEMORY;
+
+    HRESULT hrSession = E_FAIL;
+    HRESULT hr = context_->RequestEditSession(tfClientId_, req, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, &hrSession);
+    req->Release();
+    return FAILED(hr) ? hr : hrSession;
+}
+
+void FreeIME11Service::applyEdit(TfEditCookie ec, EditSessionType type, const std::string &commitUtf8,
+                                 const std::string &preeditUtf8, const std::vector<std::wstring> &cands, int cursor,
+                                 bool hasPrev, bool hasNext, const std::string &aux, ITfComposition *target) {
+    if (!context_) return;
+    switch (type) {
+    case ES_Commit:
+        commitText(ec, commitUtf8);
+        break;
+    case ES_UpdatePreedit:
+        updateComposition(ec, preeditUtf8, cands, cursor, hasPrev, hasNext, aux);
+        break;
+    case ES_Clear:
+        CandidateWindow::instance().hide();
+        closeComposition(ec, target);
+        break;
     }
-    return hr;
+}
+
+void FreeIME11Service::adoptContext(ITfContext *pic) {
+    if (pic == context_) return;
+
+    // 上下文变了：先把旧文档里的组合文本清干净（否则编码串会留在原来的编辑框里）
+    if (context_ && composition_) clearCompositionOn(context_);
+
+    // 旧的组合对象不应再被操作（TSF 会随焦点切换终止组合），
+    // 这里只释放引用，避免后续编辑写到已经失焦的文档里。
+    if (composition_) {
+        composition_->Release();
+        composition_ = nullptr;
+        compositionStarted_ = false;
+    }
+    if (contextComposition_) {
+        contextComposition_->Release();
+        contextComposition_ = nullptr;
+    }
+    if (context_) {
+        context_->Release();
+        context_ = nullptr;
+    }
+    compositionUnsupported_ = false;
+    CandidateWindow::instance().hide();
+
+    if (pic) {
+        context_ = pic;
+        context_->AddRef();
+        context_->QueryInterface(IID_ITfContextComposition, (void **)&contextComposition_);
+    }
+}
+
+void FreeIME11Service::clearCompositionOn(ITfContext *ctx) {
+    if (!ctx || !composition_) return;
+
+    ITfComposition *target = composition_;
+    composition_ = nullptr;
+    compositionStarted_ = false;
+
+    EditRequest *req = new (std::nothrow) EditRequest(this, ES_Clear, "", "", {}, 0, false, false, std::string(), target);
+    target->Release(); // 请求对象已持有引用
+    if (!req) return;
+
+    HRESULT hrSession = E_FAIL;
+    HRESULT hr = ctx->RequestEditSession(tfClientId_, req, TF_ES_SYNC | TF_ES_READWRITE, &hrSession);
+    if (FAILED(hr) || FAILED(hrSession)) {
+        // 部分应用的文档不允许同步编辑会话，退化为异步清理
+        ctx->RequestEditSession(tfClientId_, req, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, &hrSession);
+    }
+    req->Release();
 }
 
 // 取插入符所在范围（调用方负责 Release）。失败返回 false。
@@ -251,32 +421,76 @@ bool FreeIME11Service::selectionRange(TfEditCookie ec, ITfRange **ppRange) const
 }
 
 HRESULT FreeIME11Service::commitText(TfEditCookie ec, const std::string &utf8) {
-    terminateComposition(ec);
-    if (utf8.empty()) return S_OK;
+    // 上屏后候选窗必须立刻收起，否则选完词候选窗会一直挂在输入框下面
+    CandidateWindow::instance().hide();
 
     std::wstring w = Utf8ToWide(utf8);
+    bool committedInComposition = false;
 
-    // 必须插在插入符处：GetStart 是文档开头，用它会把字打到文件最前面
-    ITfRange *range = nullptr;
-    if (!selectionRange(ec, &range)) {
-        if (FAILED(context_->GetStart(ec, &range)) || !range) return E_FAIL;
+    if (composition_) {
+        ITfRange *range = nullptr;
+        if (SUCCEEDED(composition_->GetRange(&range)) && range) {
+            // 把组合区间里的编码串直接替换成最终文本，再结束组合：
+            // EndComposition 不删除区间文字，文字因此原样保留为正文；
+            // 先换字再结束（而不是先清空、结束后再插入）可以避免空组合，
+            // 也避免部分应用把「组合外插入」当成新的未完成输入继续显示。
+            HRESULT hrSet = w.empty() ? S_OK
+                                      : range->SetText(ec, 0, w.c_str(), static_cast<LONG>(w.size()));
+            if (SUCCEEDED(hrSet)) {
+                // 光标移到上屏文本之后，否则后续输入会插到刚上屏的字前面
+                range->Collapse(ec, TF_ANCHOR_END);
+                TF_SELECTION after{};
+                after.range = range;
+                after.style.ase = TF_AE_NONE;
+                after.style.fInterimChar = FALSE;
+                context_->SetSelection(ec, 1, &after);
+                committedInComposition = true;
+            } else {
+                // 区间不可写：先把编码串清掉，再在插入符处插入正文
+                range->SetText(ec, 0, L"", 0);
+                range->Collapse(ec, TF_ANCHOR_START);
+            }
+            range->Release();
+        }
+
+        // 先摘钩再结束：避免 OnCompositionTerminated 回调解引用后这里二次释放
+        ITfComposition *comp = composition_;
+        composition_ = nullptr;
+        compositionStarted_ = false;
+        comp->EndComposition(ec);
+        comp->Release();
     }
 
-    range->SetText(ec, 0, w.c_str(), static_cast<LONG>(w.size()));
-    // 把光标移到插入内容之后，否则后续输入会覆盖刚上屏的字
-    range->Collapse(ec, TF_ANCHOR_END);
-    TF_SELECTION after{};
-    after.range = range;
-    after.style.ase = TF_AE_NONE;
-    after.style.fInterimChar = FALSE;
-    context_->SetSelection(ec, 1, &after);
+    if (!committedInComposition && !w.empty()) {
+        ITfRange *range = nullptr;
+        // 必须插在插入符处：GetStart 是文档开头，用它会把字打到文件最前面
+        if (!selectionRange(ec, &range) || !range) {
+            if (FAILED(context_->GetStart(ec, &range)) || !range) return E_FAIL;
+        }
 
-    range->Release();
+        range->SetText(ec, 0, w.c_str(), static_cast<LONG>(w.size()));
+
+        // 清掉「组字中」属性，否则上屏后的文字仍可能被应用当作未完成的组合
+        ITfProperty *prop = nullptr;
+        if (SUCCEEDED(context_->GetProperty(GUID_PROP_COMPOSING, &prop)) && prop) {
+            prop->Clear(ec, range);
+            prop->Release();
+        }
+
+        range->Collapse(ec, TF_ANCHOR_END);
+        TF_SELECTION after{};
+        after.range = range;
+        after.style.ase = TF_AE_NONE;
+        after.style.fInterimChar = FALSE;
+        context_->SetSelection(ec, 1, &after);
+        range->Release();
+    }
     return S_OK;
 }
 
 HRESULT FreeIME11Service::updateComposition(TfEditCookie ec, const std::string &preeditUtf8,
-                                            const std::vector<std::wstring> &cands) {
+                                            const std::vector<std::wstring> &cands, int cursor, bool hasPrev,
+                                            bool hasNext, const std::string &aux) {
     std::wstring preedit = Utf8ToWide(preeditUtf8);
     if (preedit.empty()) {
         terminateComposition(ec);
@@ -329,7 +543,7 @@ HRESULT FreeIME11Service::updateComposition(TfEditCookie ec, const std::string &
             // 兜底：鼠标位置，至少不会跑到左上角
             GetCursorPos(&pt);
         }
-        CandidateWindow::instance().show(cands, editCursor_, editHasPrev_, editHasNext_, Utf8ToWide(editAux_), pt);
+        CandidateWindow::instance().show(cands, cursor, hasPrev, hasNext, Utf8ToWide(aux), pt);
     } else {
         CandidateWindow::instance().hide();
     }
@@ -381,11 +595,32 @@ bool FreeIME11Service::caretScreenPos(TfEditCookie ec, POINT &pt) const {
 
 HRESULT FreeIME11Service::terminateComposition(TfEditCookie ec) {
     CandidateWindow::instance().hide();
-    if (isComposing()) {
-        composition_->EndComposition(ec);
-        composition_->Release();
+    if (!composition_) return S_OK;
+
+    ITfComposition *comp = composition_;
+    composition_ = nullptr;
+    compositionStarted_ = false;
+    closeComposition(ec, comp);
+    comp->Release();
+    return S_OK;
+}
+
+// 清空组合区间并结束组合。EndComposition 不会删除文字，必须自己 SetText("")。
+// 不改变引用计数：target 为空时用当前 composition_（引用仍由调用方/成员持有）。
+void FreeIME11Service::closeComposition(TfEditCookie ec, ITfComposition *target) {
+    ITfComposition *comp = target ? target : composition_;
+    if (!comp) return;
+
+    if (comp == composition_) {
         composition_ = nullptr;
         compositionStarted_ = false;
     }
-    return S_OK;
+
+    ITfRange *range = nullptr;
+    if (SUCCEEDED(comp->GetRange(&range)) && range) {
+        range->SetText(ec, 0, L"", 0);
+        range->Collapse(ec, TF_ANCHOR_START);
+        range->Release();
+    }
+    comp->EndComposition(ec);
 }

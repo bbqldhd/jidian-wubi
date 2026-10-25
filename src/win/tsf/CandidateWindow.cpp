@@ -1,6 +1,7 @@
 #include "CandidateWindow.h"
 
 #include <gdiplus.h>
+#include <windowsx.h>
 
 #include <algorithm>
 #include <mutex>
@@ -30,7 +31,9 @@ int scaleOf(int base, int pct) { return MulDiv(base, pct, 100); }
 // 用于从模块内地址取 HINSTANCE
 void moduleAnchor() {}
 
-COLORREF toColorRef(ARGB c) { return RGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF); }
+bool ptInRect(const RECT &r, int x, int y) {
+    return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+}
 
 }  // namespace
 
@@ -41,6 +44,11 @@ CandidateWindow &CandidateWindow::instance() {
 
 void CandidateWindow::setInstanceHandle(HINSTANCE hinst) { g_hinst = hinst; }
 
+void CandidateWindow::setHandlers(SelectHandler onSelect, PageHandler onPage) {
+    onSelect_ = std::move(onSelect);
+    onPage_ = std::move(onPage);
+}
+
 int CandidateWindow::dpiScale() const {
     HDC dc = GetDC(nullptr);
     const int dpi = dc ? GetDeviceCaps(dc, LOGPIXELSX) : 96;
@@ -49,7 +57,8 @@ int CandidateWindow::dpiScale() const {
 }
 
 void CandidateWindow::ensureCreated() {
-    if (hwnd_) return;
+    if (hwnd_ && IsWindow(hwnd_)) return;
+    hwnd_ = nullptr;
 
     HINSTANCE hinst = g_hinst;
     if (!hinst) {
@@ -60,20 +69,120 @@ void CandidateWindow::ensureCreated() {
 
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
-    wc.lpfnWndProc = DefWindowProcW;  // 不接受输入，无需处理消息
+    wc.lpfnWndProc = &CandidateWindow::wndProc;
     wc.hInstance = hinst;
     wc.lpszClassName = kClassName;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     RegisterClassExW(&wc);  // 已注册时返回 0，忽略即可
 
     hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_LAYERED, kClassName,
-                            L"", WS_POPUP, 0, 0, 10, 10, nullptr, nullptr, hinst, nullptr);
+                            L"", WS_POPUP, 0, 0, 10, 10, nullptr, nullptr, hinst, this);
 }
 
 bool CandidateWindow::visible() const { return hwnd_ && IsWindowVisible(hwnd_) != FALSE; }
 
 void CandidateWindow::hide() {
+    hover_ = kNone;
+    trackingLeave_ = false;
     if (hwnd_ && IsWindowVisible(hwnd_)) ShowWindow(hwnd_, SW_HIDE);
+}
+
+LRESULT CALLBACK CandidateWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    CandidateWindow *self = reinterpret_cast<CandidateWindow *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    if (msg == WM_NCCREATE) {
+        auto *cs = reinterpret_cast<CREATESTRUCTW *>(lParam);
+        self = static_cast<CandidateWindow *>(cs->lpCreateParams);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+    }
+    if (self) return self->handleMessage(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+LRESULT CandidateWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_MOUSEACTIVATE:
+        // 点击候选窗绝不能抢焦点：一旦文档失焦，TSF 会终止组合，
+        // 候选窗跟着消失、后续按键也没人处理，看起来就是「候选框丢了」。
+        return MA_NOACTIVATE;
+
+    case WM_ERASEBKGND:
+        return 1;
+
+    case WM_MOUSEMOVE: {
+        setHover(hitTest(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)));
+        trackMouseLeave();
+        return 0;
+    }
+
+    case WM_MOUSELEAVE:
+        trackingLeave_ = false;
+        setHover(kNone);
+        return 0;
+
+    case WM_LBUTTONDOWN:
+        // 吞掉按下消息，避免 DefWindowProc 走窗口激活/拖动逻辑
+        return 0;
+
+    case WM_LBUTTONUP: {
+        const int idx = hitTest(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        if (idx >= 0) {
+            if (onSelect_) onSelect_(idx);
+        } else if (idx == kPrevPage) {
+            if (onPage_) onPage_(-1);
+        } else if (idx == kNextPage) {
+            if (onPage_) onPage_(1);
+        }
+        return 0;
+    }
+
+    case WM_SETCURSOR: {
+        POINT pt{};
+        if (GetCursorPos(&pt) && hwnd_) {
+            ScreenToClient(hwnd_, &pt);
+            const int idx = hitTest(pt.x, pt.y);
+            const bool clickable = idx >= 0 || idx == kPrevPage || idx == kNextPage;
+            SetCursor(LoadCursorW(nullptr, clickable ? IDC_HAND : IDC_ARROW));
+            return TRUE;
+        }
+        break;
+    }
+
+    case WM_DESTROY:
+        if (hwnd == hwnd_) hwnd_ = nullptr;
+        return 0;
+
+    default:
+        break;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+void CandidateWindow::trackMouseLeave() {
+    if (trackingLeave_ || !hwnd_) return;
+    TRACKMOUSEEVENT tme{};
+    tme.cbSize = sizeof(tme);
+    tme.dwFlags = TME_LEAVE;
+    tme.hwndTrack = hwnd_;
+    if (TrackMouseEvent(&tme)) trackingLeave_ = true;
+}
+
+void CandidateWindow::setHover(int index) {
+    if (hover_ == index) return;
+    hover_ = index;
+    if (visible()) render();
+}
+
+int CandidateWindow::hitTest(int x, int y) const {
+    if (x < 0 || y < 0 || x >= width_ || y >= height_) return kNone;
+
+    for (size_t i = 0; i < itemRects_.size(); ++i) {
+        if (ptInRect(itemRects_[i], x, y)) return static_cast<int>(i);
+    }
+    if (hasArrows_) {
+        if (hasPrev_ && ptInRect(prevRect_, x, y)) return kPrevPage;
+        if (hasNext_ && ptInRect(nextRect_, x, y)) return kNextPage;
+    }
+    return kNone;
 }
 
 void CandidateWindow::show(const std::vector<std::wstring> &cands, int cursor, bool hasPrev, bool hasNext,
@@ -92,23 +201,26 @@ void CandidateWindow::show(const std::vector<std::wstring> &cands, int cursor, b
     aux_ = aux;
     caret_ = caret;
     scale_ = dpiScale();
+    if (hover_ >= static_cast<int>(cands_.size())) hover_ = kNone;
 
     render();
+
+    // 兜底：确保窗口真的可见（层级窗口被系统隐藏后不会自己回来）
+    if (!IsWindowVisible(hwnd_)) ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
 }
 
 void CandidateWindow::render() {
     ensureGdiplus();
+    if (!hwnd_) return;
 
     const int s = scale_;
 
     // 字体
-    Gdiplus::FontFamily family(L"Microsoft YaHei UI");
-    if (!family.IsAvailable()) {
-        Gdiplus::FontFamily fallback(L"Segoe UI");
-        // 这里无法改 family 引用，直接继续用默认字体族亦可
-    }
-    Gdiplus::Font fontText(&family, static_cast<REAL>(scaleOf(15, s) * 96.0 / 96.0), FontStyleRegular, UnitPixel);
-    Gdiplus::Font fontNum(&family, static_cast<REAL>(scaleOf(11, s)), FontStyleRegular, UnitPixel);
+    Gdiplus::FontFamily yahei(L"Microsoft YaHei UI");
+    Gdiplus::FontFamily segoe(L"Segoe UI");
+    Gdiplus::FontFamily *family = yahei.IsAvailable() ? &yahei : &segoe;
+    Gdiplus::Font fontText(family, static_cast<REAL>(scaleOf(15, s)), FontStyleRegular, UnitPixel);
+    Gdiplus::Font fontNum(family, static_cast<REAL>(scaleOf(11, s)), FontStyleRegular, UnitPixel);
 
     const int pad = scaleOf(9, s);
     const int gap = scaleOf(14, s);
@@ -178,6 +290,33 @@ void CandidateWindow::render() {
         if (y < work.top + scaleOf(4, s)) y = work.top + scaleOf(4, s);
     }
 
+    width_ = w;
+    height_ = height;
+
+    // 布局结果（客户区坐标）：命中测试与绘制共用
+    itemRects_.clear();
+    itemRects_.reserve(cells.size());
+    {
+        int cx = pad;
+        for (size_t i = 0; i < cells.size(); ++i) {
+            RECT r{cx, pad, cx + cells[i].w, pad + lineH};
+            itemRects_.push_back(r);
+            cx += cells[i].w;
+            if (i + 1 < cells.size()) cx += gap;
+        }
+    }
+    prevRect_ = RECT{0, 0, 0, 0};
+    nextRect_ = RECT{0, 0, 0, 0};
+    hasArrows_ = paging;
+    if (paging) {
+        int ax = w - pad - arrowsW;
+        if (hasPrev_) {
+            prevRect_ = RECT{ax, pad, ax + arrowW, pad + lineH};
+            ax += arrowW;
+        }
+        if (hasNext_) nextRect_ = RECT{ax, pad, ax + arrowW, pad + lineH};
+    }
+
     // 用 DIB Section 直接绘制，保证 32bpp alpha 不被 GDI+ 转换丢失
     BITMAPINFO bmi{};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -237,42 +376,54 @@ void CandidateWindow::render() {
             g.DrawPath(&pen, &bp);
         }
 
+        auto roundRect = [&](GraphicsPath &p, const RECT &r, int radiusPx) {
+            const int d = radiusPx * 2;
+            const RectF rr(static_cast<REAL>(r.left), static_cast<REAL>(r.top),
+                           static_cast<REAL>(r.right - r.left), static_cast<REAL>(r.bottom - r.top));
+            p.AddArc(rr.X, rr.Y, (REAL)d, (REAL)d, 180, 90);
+            p.AddArc(rr.GetRight() - d, rr.Y, (REAL)d, (REAL)d, 270, 90);
+            p.AddArc(rr.GetRight() - d, rr.GetBottom() - d, (REAL)d, (REAL)d, 0, 90);
+            p.AddArc(rr.X, rr.GetBottom() - d, (REAL)d, (REAL)d, 90, 90);
+            p.CloseFigure();
+        };
+
         // 候选
-        int cx = pad;
-        const int cy = pad;
         for (size_t i = 0; i < cells.size(); ++i) {
             const bool hi = (static_cast<int>(i) == cursor_);
-            if (hi) {
+            const bool hovered = (static_cast<int>(i) == hover_);
+            if (hi || hovered) {
                 GraphicsPath hp;
-                const int d = scaleOf(4, s) * 2;
-                const RectF hr(static_cast<REAL>(cx), static_cast<REAL>(cy), static_cast<REAL>(cells[i].w),
-                               static_cast<REAL>(lineH));
-                hp.AddArc(hr.X, hr.Y, (REAL)d, (REAL)d, 180, 90);
-                hp.AddArc(hr.GetRight() - d, hr.Y, (REAL)d, (REAL)d, 270, 90);
-                hp.AddArc(hr.GetRight() - d, hr.GetBottom() - d, (REAL)d, (REAL)d, 0, 90);
-                hp.AddArc(hr.X, hr.GetBottom() - d, (REAL)d, (REAL)d, 90, 90);
-                hp.CloseFigure();
-                SolidBrush hb(Color(255, 43, 108, 246));
-                g.FillPath(&hb, &hp);
+                roundRect(hp, itemRects_[i], scaleOf(4, s));
+                if (hi) {
+                    SolidBrush hb(Color(255, 43, 108, 246));
+                    g.FillPath(&hb, &hp);
+                } else {
+                    // 悬停：淡蓝底，与选中态区分开
+                    SolidBrush hb(Color(255, 232, 240, 254));
+                    g.FillPath(&hb, &hp);
+                    Pen hpPen(Color(255, 182, 205, 245), 1.0f);
+                    g.DrawPath(&hpPen, &hp);
+                }
             }
 
             StringFormat sf;
             sf.SetAlignment(StringAlignmentNear);
             sf.SetLineAlignment(StringAlignmentCenter);
 
-            SolidBrush numBrush(hi ? Color(235, 235, 245, 255) : Color(255, 144, 150, 160));
-            SolidBrush textBrush(hi ? Color(255, 255, 255, 255) : Color(255, 31, 35, 41));
+            SolidBrush numBrush(hi ? Color(235, 235, 245, 255)
+                                   : (hovered ? Color(255, 70, 100, 160) : Color(255, 144, 150, 160)));
+            SolidBrush textBrush(hi ? Color(255, 255, 255, 255)
+                                    : (hovered ? Color(255, 14, 60, 140) : Color(255, 31, 35, 41)));
 
-            RectF rNum(static_cast<REAL>(cx + itemPadX), static_cast<REAL>(cy), static_cast<REAL>(cells[i].numW),
-                       static_cast<REAL>(lineH));
+            const RECT &ir = itemRects_[i];
+            RectF rNum(static_cast<REAL>(ir.left + itemPadX), static_cast<REAL>(ir.top),
+                       static_cast<REAL>(cells[i].numW), static_cast<REAL>(lineH));
             g.DrawString(cells[i].num.c_str(), -1, &fontNum, rNum, &sf, &numBrush);
 
-            RectF rText(static_cast<REAL>(cx + itemPadX + cells[i].numW + scaleOf(3, s)), static_cast<REAL>(cy),
-                        static_cast<REAL>(cells[i].textW + scaleOf(2, s)), static_cast<REAL>(lineH));
+            RectF rText(static_cast<REAL>(ir.left + itemPadX + cells[i].numW + scaleOf(3, s)),
+                        static_cast<REAL>(ir.top), static_cast<REAL>(cells[i].textW + scaleOf(2, s)),
+                        static_cast<REAL>(lineH));
             g.DrawString(cells[i].text.c_str(), -1, &fontText, rText, &sf, &textBrush);
-
-            cx += cells[i].w;
-            if (i + 1 < cells.size()) cx += gap;
         }
 
         // 翻页箭头
@@ -282,18 +433,31 @@ void CandidateWindow::render() {
             StringFormat sf;
             sf.SetAlignment(StringAlignmentCenter);
             sf.SetLineAlignment(StringAlignmentCenter);
-            int ax = w - pad - arrowsW;
+
             if (hasPrev_) {
-                SolidBrush b(Color(255, 107, 114, 128));
-                RectF r(static_cast<REAL>(ax), static_cast<REAL>(cy), static_cast<REAL>(arrowW),
-                        static_cast<REAL>(lineH));
+                const bool hovered = (hover_ == kPrevPage);
+                if (hovered) {
+                    GraphicsPath hp;
+                    roundRect(hp, prevRect_, scaleOf(4, s));
+                    SolidBrush hb(Color(255, 232, 240, 254));
+                    g.FillPath(&hb, &hp);
+                }
+                SolidBrush b(hovered ? Color(255, 14, 60, 140) : Color(255, 107, 114, 128));
+                RectF r(static_cast<REAL>(prevRect_.left), static_cast<REAL>(prevRect_.top),
+                        static_cast<REAL>(prevRect_.right - prevRect_.left), static_cast<REAL>(lineH));
                 g.DrawString(L"\x2039", -1, &fontArrow, r, &sf, &b);
-                ax += arrowW;
             }
             if (hasNext_) {
-                SolidBrush b(Color(255, 107, 114, 128));
-                RectF r(static_cast<REAL>(ax), static_cast<REAL>(cy), static_cast<REAL>(arrowW),
-                        static_cast<REAL>(lineH));
+                const bool hovered = (hover_ == kNextPage);
+                if (hovered) {
+                    GraphicsPath hp;
+                    roundRect(hp, nextRect_, scaleOf(4, s));
+                    SolidBrush hb(Color(255, 232, 240, 254));
+                    g.FillPath(&hb, &hp);
+                }
+                SolidBrush b(hovered ? Color(255, 14, 60, 140) : Color(255, 107, 114, 128));
+                RectF r(static_cast<REAL>(nextRect_.left), static_cast<REAL>(nextRect_.top),
+                        static_cast<REAL>(nextRect_.right - nextRect_.left), static_cast<REAL>(lineH));
                 g.DrawString(L"\x203A", -1, &fontArrow, r, &sf, &b);
             }
         }

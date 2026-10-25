@@ -48,14 +48,25 @@ public:
     bool chinesePunc() const;
     bool fullShape() const;
     bool simpTrad() const;   // true=简入繁出
+    // 引擎名与状态
     std::string engineName() const; // "wbzx" | "wbpy" | "py" | "en"
+
+    // 这个按键是否应该由输入法接管。
+    // 前端（TSF）用它决定是否吃掉按键：不带 Ctrl/Alt/Win，空闲态不吃空格/回车/退格/Esc/数字。
+    bool wantsKey(int vk, bool shift, bool ctrl, bool alt) const;
 
     // 主入口：处理一次按键。vkey 使用 Windows 虚拟键码（兼容 keysym 映射）。
     // shift/ctrl/alt 为修饰键状态；按下=keydown 事件。
     SessionOutcome processKey(int vk, bool shift, bool ctrl, bool alt);
 
-    // 直接选择第 n 个候选（0 起），返回上屏结果并复位。
+    // 直接选择第 n 个候选（0 起，全局下标），返回上屏结果并复位。
     SessionOutcome selectCandidate(int index);
+
+    // 选择当前页内的第 n 个候选（0 起，鼠标点击用）。
+    SessionOutcome selectCandidateOnPage(int index);
+
+    // 翻页：delta = -1 上一页 / +1 下一页。返回刷新后的候选与预编辑。
+    SessionOutcome pageCandidates(int delta);
 
     // 重置会话（切换窗口 / Esc）。
     void reset();

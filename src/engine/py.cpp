@@ -13,7 +13,7 @@ namespace freewb
 PyEngine::PyEngine() : freqOrder_("freq_order_py.txt")
 {
     clearMbLoadState();
-    loadDictionary();
+    // 不在构造时加载 8MB 拼音词库：等真正输入拼音时再加载（见 ensureLoaded）
 }
 
 PyEngine::~PyEngine() = default;
@@ -70,8 +70,19 @@ void PyEngine::setWubiPrimaryCodeLookupCallback(WubiPrimaryCodeLookupCallback ca
     wubiPrimaryCodeLookupCallback_ = std::move(callback);
 }
 
+void PyEngine::ensureLoaded()
+{
+    if (loaded_)
+    {
+        return;
+    }
+    loaded_ = true;
+    loadDictionary();
+}
+
 void PyEngine::putKey(const char *strCode)
 {
+    ensureLoaded();
     result_.clearRows();
 
     if (strCode == nullptr)
@@ -99,6 +110,7 @@ void PyEngine::reset()
 void PyEngine::reloadMainDictionary()
 {
     clearMbLoadState();
+    loaded_ = true;
     loadDictionary();
 }
 
@@ -114,11 +126,13 @@ void PyEngine::reloadFreqOrder()
 
 bool PyEngine::shouldProcessKey(const char *key) const
 {
+    const_cast<PyEngine *>(this)->ensureLoaded();
     return mbTable_.strInputCode().find(key) != std::string::npos;
 }
 
 bool PyEngine::isExactDictionaryKey(const std::string &preedit) const
 {
+    const_cast<PyEngine *>(this)->ensureLoaded();
     return mbTable_.hasExactCode(preedit);
 }
 
