@@ -80,6 +80,8 @@ private:
     HRESULT terminateComposition(TfEditCookie ec);
     // 取插入符位置（屏幕坐标，左下方）；失败返回 false
     bool caretScreenPos(TfEditCookie ec, POINT &pt) const;
+    // 取插入符所在范围（调用方负责 Release）；失败返回 false
+    bool selectionRange(TfEditCookie ec, ITfRange **ppRange) const;
 
     LONG refCount_ = 1;
     TfClientId tfClientId_ = TF_CLIENTID_NULL;
@@ -91,6 +93,8 @@ private:
     DWORD cookieThreadMgrEventSink_ = TF_INVALID_COOKIE;
 
     bool compositionStarted_ = false;
+    // 该上下文不支持 TSF 组合（终端、部分 Electron 应用）：降级为只出候选窗、直接上屏
+    bool compositionUnsupported_ = false;
 
     EditSessionType editType_ = ES_Clear;
     std::string editCommitText_;

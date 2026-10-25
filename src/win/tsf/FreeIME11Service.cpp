@@ -165,6 +165,7 @@ STDMETHODIMP FreeIME11Service::OnSetFocus(ITfDocumentMgr *pdimFocus, ITfDocument
             if (contextComposition_) contextComposition_->Release();
             contextComposition_ = nullptr;
             context_->QueryInterface(IID_ITfContextComposition, (void **)&contextComposition_);
+            compositionUnsupported_ = false;
             session_->reset();
         }
     }
@@ -237,14 +238,39 @@ HRESULT FreeIME11Service::requestEdit(EditSessionType type, const std::string &t
     return hr;
 }
 
+// 取插入符所在范围（调用方负责 Release）。失败返回 false。
+bool FreeIME11Service::selectionRange(TfEditCookie ec, ITfRange **ppRange) const {
+    *ppRange = nullptr;
+    if (!context_) return false;
+    TF_SELECTION sel{};
+    ULONG n = 0;
+    if (FAILED(context_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) || n != 1 || !sel.range)
+        return false;
+    *ppRange = sel.range;
+    return true;
+}
+
 HRESULT FreeIME11Service::commitText(TfEditCookie ec, const std::string &utf8) {
     terminateComposition(ec);
     if (utf8.empty()) return S_OK;
 
     std::wstring w = Utf8ToWide(utf8);
+
+    // 必须插在插入符处：GetStart 是文档开头，用它会把字打到文件最前面
     ITfRange *range = nullptr;
-    if (FAILED(context_->GetStart(ec, &range)) || !range) return E_FAIL;
+    if (!selectionRange(ec, &range)) {
+        if (FAILED(context_->GetStart(ec, &range)) || !range) return E_FAIL;
+    }
+
     range->SetText(ec, 0, w.c_str(), static_cast<LONG>(w.size()));
+    // 把光标移到插入内容之后，否则后续输入会覆盖刚上屏的字
+    range->Collapse(ec, TF_ANCHOR_END);
+    TF_SELECTION after{};
+    after.range = range;
+    after.style.ase = TF_AE_NONE;
+    after.style.fInterimChar = FALSE;
+    context_->SetSelection(ec, 1, &after);
+
     range->Release();
     return S_OK;
 }
@@ -257,33 +283,43 @@ HRESULT FreeIME11Service::updateComposition(TfEditCookie ec, const std::string &
         return S_OK;
     }
 
-    // 候选不再拼进组字串，改由自绘候选窗显示（见 CandidateWindow）
-    if (!isComposing()) {
+    // 组字：优先在插入符处建立 TSF 组合；不支持组合的应用（终端/部分 Electron）降级为「只出候选窗」
+    if (!isComposing() && !compositionUnsupported_) {
         ITfRange *range = nullptr;
-        if (FAILED(context_->GetStart(ec, &range)) || !range) return E_FAIL;
+        if (!selectionRange(ec, &range)) {
+            if (FAILED(context_->GetStart(ec, &range)) || !range) return E_FAIL;
+        }
         range->Collapse(ec, TF_ANCHOR_END);
-        if (!contextComposition_ || FAILED(contextComposition_->StartComposition(ec, range, static_cast<ITfCompositionSink *>(this),
-                                                                                &composition_))) {
-            if (range) range->Release();
-            return E_FAIL;
+        HRESULT hrStart = E_FAIL;
+        if (contextComposition_) {
+            hrStart = contextComposition_->StartComposition(ec, range, static_cast<ITfCompositionSink *>(this),
+                                                            &composition_);
         }
         range->Release();
-        compositionStarted_ = true;
+        if (FAILED(hrStart)) {
+            // 该上下文不支持组合：不再尝试，改为只在候选窗里显示，提交时直接插入
+            compositionUnsupported_ = true;
+            composition_ = nullptr;
+        } else {
+            compositionStarted_ = true;
+        }
     }
 
-    ITfRange *range = nullptr;
-    if (SUCCEEDED(composition_->GetRange(&range)) && range) {
-        range->SetText(ec, 0, preedit.c_str(), static_cast<LONG>(preedit.size()));
-        // 组合属性标记
-        ITfProperty *prop = nullptr;
-        if (SUCCEEDED(context_->GetProperty(GUID_PROP_COMPOSING, &prop))) {
-            VARIANT var;
-            var.vt = VT_I4;
-            var.lVal = 1;
-            prop->SetValue(ec, range, &var);
-            prop->Release();
+    if (isComposing()) {
+        ITfRange *range = nullptr;
+        if (SUCCEEDED(composition_->GetRange(&range)) && range) {
+            range->SetText(ec, 0, preedit.c_str(), static_cast<LONG>(preedit.size()));
+            // 组合属性标记
+            ITfProperty *prop = nullptr;
+            if (SUCCEEDED(context_->GetProperty(GUID_PROP_COMPOSING, &prop))) {
+                VARIANT var;
+                var.vt = VT_I4;
+                var.lVal = 1;
+                prop->SetValue(ec, range, &var);
+                prop->Release();
+            }
+            range->Release();
         }
-        range->Release();
     }
 
     // 候选窗：跟随插入符

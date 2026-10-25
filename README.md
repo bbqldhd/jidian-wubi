@@ -81,6 +81,15 @@ bash build_mingw.sh
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
 
+## v11.0.5：上屏与组字定位
+
+- **组字与上屏改用插入符位置**：之前两处都调 `ITfContext::GetStart()`——那是**文档开头**，
+  组字还额外 `Collapse(END)` 跑到**文档末尾**。结果是组字永远在文件末尾、上屏永远插到文件最前面，
+  在非空文档里字会乱跑、错位。现在统一走 `GetSelection()` 取插入符。
+- **上屏后光标移到插入内容之后**（并写回 selection），否则下一次输入会覆盖刚打出的字。
+- **不支持 TSF 组合的应用降级**：若 `StartComposition` 失败（终端、部分 Electron 应用常见），
+  不再整体失败，改为「只出候选窗 + 提交时直接插入」。
+
 ## v11.0.4：候选窗
 
 - **新增自绘候选窗**：候选不再拼进组字串，改为跟随插入符的浮动窗口
