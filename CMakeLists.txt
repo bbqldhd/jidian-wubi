@@ -2,7 +2,7 @@
 # 目标：Windows 10 1809+ / Windows 11 26H2；架构 x64 / ARM64。
 cmake_minimum_required(VERSION 3.20)
 
-project(FreeIME11 VERSION 11.0.0 LANGUAGES C CXX)
+project(FreeIME11 VERSION 11.0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -81,6 +81,11 @@ if(WIN32 AND FREEWB_BUILD_TSF)
     add_executable(freeime11-settings src/win/settings_app/main.cpp)
     target_link_libraries(freeime11-settings PRIVATE freeime11_session)
     target_compile_definitions(freeime11-settings PRIVATE UNICODE _UNICODE)
+
+    # 卸载程序
+    add_executable(freeime11-uninstall src/win/uninstall/main.cpp)
+    target_link_libraries(freeime11-uninstall PRIVATE shell32 user32)
+    target_compile_definitions(freeime11-uninstall PRIVATE UNICODE _UNICODE)
 endif()
 
 # ---------------------------------------------------------------------------

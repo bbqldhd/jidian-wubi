@@ -2,7 +2,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.0.0**。
+版本号 **11.0.1**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -22,7 +22,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序
-├── cmake/                   # 版本资源 11.0.0、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.0.1、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -58,13 +58,20 @@ bash build_mingw.sh
 ```
 
 产出：`build/FreeIME11.dll`（TSF 输入法）、`build/freeime11-migrate.exe`、
-`build/freeime11-settings.exe`、`build/session_test.exe`。
+`build/freeime11-settings.exe`、`build/freeime11-uninstall.exe`、`build/session_test.exe`。
 
 ## 安装
 
-1. 运行 `FreeIME11-11.0.0-setup.exe`（自解压安装包，自动请求管理员并 `regsvr32` 注册）。
+1. 运行 `FreeIME11-11.0.1-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+   写入「添加/删除程序」、创建开始菜单快捷方式）。
 2. 打开「设置 → 时间和语言 → 语言和区域」添加「极点五笔 11」。
 3. 可选：`freeime11-migrate "旧版极点目录"` 迁移 10.8.9 配置（已验证可迁移 19 项配置）。
+
+## 卸载
+
+在「设置 → 应用 → 已安装的应用」中找到「极点五笔 11」卸载；或运行安装目录下的
+`freeime11-uninstall.exe`（注销 TSF 文本服务、删除安装文件，并可选删除用户词典与配置
+`%APPDATA%\FreeIME11`）。
 
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含系统集成候选 UI 接口，当前候选以组合内嵌文本显示；

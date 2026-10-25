@@ -9,13 +9,14 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-echo Installing FreeIME 11 (JiDian Wubi) v11.0.0 ...
+echo Installing FreeIME 11 (JiDian Wubi) v11.0.1 ...
 
 set "INSTALLDIR=%ProgramFiles%\FreeIME11"
 if not exist "%INSTALLDIR%" mkdir "%INSTALLDIR%"
 copy /y "%~dp0FreeIME11.dll" "%INSTALLDIR%\" >nul
 copy /y "%~dp0freeime11-migrate.exe" "%INSTALLDIR%\" >nul
 copy /y "%~dp0freeime11-settings.exe" "%INSTALLDIR%\" >nul
+copy /y "%~dp0freeime11-uninstall.exe" "%INSTALLDIR%\" >nul
 
 regsvr32 /s "%INSTALLDIR%\FreeIME11.dll"
 

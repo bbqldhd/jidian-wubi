@@ -24,18 +24,23 @@ echo "[3/5] 编译 TSF 输入法 DLL..."
 "$GPP" -shared $COMMON -DUNICODE -D_UNICODE -Isrc/win/tsf \
   $UTILS $ENGINE src/session/session.cpp \
   src/win/tsf/FreeIME11Service.cpp src/win/tsf/dllmain.cpp build/version.o \
-  -liconv -lole32 -ladvapi32 -luuid -lshell32 -static-libgcc -static-libstdc++ \
+  -liconv -lole32 -ladvapi32 -luuid -lshell32 -static \
   src/win/tsf/FreeIME11.def -o build/FreeIME11.dll
 
 echo "[4/5] 编译数据迁移工具..."
 "$GPP" $COMMON -DUNICODE -D_UNICODE -municode -Isrc/win/config \
   $UTILS src/win/config/legacy_importer.cpp src/win/migrate/main.cpp \
-  -liconv -static-libgcc -static-libstdc++ -o build/freeime11-migrate.exe
+  -liconv -static -o build/freeime11-migrate.exe
 
-echo "[5/5] 编译设置程序..."
+echo "[5/6] 编译设置程序..."
 "$GPP" $COMMON -DUNICODE -D_UNICODE -municode \
   $UTILS src/win/settings_app/main.cpp \
-  -liconv -lshell32 -luser32 -static-libgcc -static-libstdc++ -o build/freeime11-settings.exe
+  -liconv -lshell32 -luser32 -static -o build/freeime11-settings.exe
+
+echo "[6/6] 编译卸载程序..."
+"$GPP" $COMMON -DUNICODE -D_UNICODE -municode \
+  src/win/uninstall/main.cpp \
+  -lshell32 -luser32 -static -o build/freeime11-uninstall.exe
 
 echo ""
 echo "构建完成："
