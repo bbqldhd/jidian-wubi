@@ -43,42 +43,63 @@ static bool activateViaTsf(DWORD *pHr) {
     // TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE = 0x00000004
     hr = pMgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, 0x0804, kClsid, kProfile, nullptr, 0x00000004);
     pMgr->Release();
+
+    // 关键：把语言配置「为当前用户启用」。只调 AddLanguageProfile 只是系统登记，
+    // 不调这个的话，语言列表会加进去又立刻失效（Windows 认为该配置未启用）。
+    if (SUCCEEDED(hr)) {
+        HRESULT hrEnable = pProfiles->EnableLanguageProfile(kClsid, 0x0804, kProfile, TRUE);
+        if (FAILED(hrEnable)) {
+            // 启用失败不覆盖激活结果，但要报告出来
+            wprintf(L"EnableLanguageProfile hr=0x%08lX\n", static_cast<unsigned long>(hrEnable));
+        }
+    }
+
     pProfiles->Release();
     if (pHr) *pHr = static_cast<DWORD>(hr);
     return SUCCEEDED(hr);
 }
 
-// 回落：只追加自己的 HKCU 值（幂等，不碰其他值）
-static bool activateViaRegistry() {
+// 确保语言列表里存在本输入法，且值类型必须是 REG_DWORD。
+// Windows 只认 DWORD 序号；写成 REG_SZ 会被静默忽略，表现为
+// 「设置里加进去、返回就没了」。
+static bool ensureLanguageListEntry() {
     HKEY hKey = nullptr;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, kLangKey, 0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &hKey,
                         nullptr) != ERROR_SUCCESS)
         return false;
 
-    DWORD type = 0, size = 0;
+    DWORD type = 0, size = 0, order = 0;
     if (RegQueryValueExW(hKey, kEntryName, nullptr, &type, nullptr, &size) == ERROR_SUCCESS) {
-        RegCloseKey(hKey);
-        return true;
-    }
-
-    DWORD maxOrder = 0;
-    for (DWORD i = 0;; ++i) {
-        wchar_t name[512];
-        DWORD nameLen = 512;
-        BYTE data[128] = {0};
-        DWORD dataLen = sizeof(data);
-        DWORD vtype = 0;
-        if (RegEnumValueW(hKey, i, name, &nameLen, nullptr, &vtype, data, &dataLen) != ERROR_SUCCESS) break;
-        if (vtype == REG_SZ) {
-            const int v = _wtoi(reinterpret_cast<const wchar_t *>(data));
-            if (v > static_cast<int>(maxOrder)) maxOrder = static_cast<DWORD>(v);
+        if (type == REG_DWORD && size == sizeof(DWORD)) {
+            RegCloseKey(hKey);  // 已是正确类型
+            return true;
+        }
+        if (type == REG_SZ) {
+            wchar_t buf[32] = {0};
+            DWORD cb = sizeof(buf) - sizeof(wchar_t);
+            if (RegQueryValueExW(hKey, kEntryName, nullptr, &type, reinterpret_cast<BYTE *>(buf), &cb) ==
+                ERROR_SUCCESS)
+                order = static_cast<DWORD>(_wtoi(buf));
         }
     }
 
-    const std::wstring value = std::to_wstring(maxOrder + 1);
-    const LONG rc = RegSetValueExW(hKey, kEntryName, 0, REG_SZ,
-                                   reinterpret_cast<const BYTE *>(value.c_str()),
-                                   static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+    if (order == 0) {
+        for (DWORD i = 0;; ++i) {
+            wchar_t name[512];
+            DWORD nameLen = 512;
+            DWORD vtype = 0, data = 0, dataLen = sizeof(data);
+            if (RegEnumValueW(hKey, i, name, &nameLen, nullptr, &vtype, nullptr, nullptr) != ERROR_SUCCESS) break;
+            if (vtype == REG_DWORD &&
+                RegQueryValueExW(hKey, name, nullptr, nullptr, reinterpret_cast<BYTE *>(&data), &dataLen) ==
+                    ERROR_SUCCESS &&
+                data > order)
+                order = data;
+        }
+        order += 1;
+    }
+
+    const LONG rc = RegSetValueExW(hKey, kEntryName, 0, REG_DWORD, reinterpret_cast<const BYTE *>(&order),
+                                   sizeof(order));
     RegCloseKey(hKey);
     return rc == ERROR_SUCCESS;
 }
@@ -145,10 +166,13 @@ int wmain() {
     if (okApi) {
         wprintf(L"ActivateProfile OK\n");
     } else {
-        wprintf(L"ActivateProfile failed hr=0x%08lX, falling back to registry\n", static_cast<unsigned long>(hr));
-        activateViaRegistry();
+        wprintf(L"ActivateProfile failed hr=0x%08lX\n", static_cast<unsigned long>(hr));
     }
 
+    // 无论 API 是否成功，都确保语言列表条目存在且为 REG_DWORD
+    const bool okList = ensureLanguageListEntry();
+    wprintf(L"language list entry: %s\n", okList ? L"OK" : L"FAILED");
+
     if (SUCCEEDED(hrInit)) CoUninitialize();
-    return okApi ? 0 : 3;
+    return (okApi || okList) ? 0 : 3;
 }

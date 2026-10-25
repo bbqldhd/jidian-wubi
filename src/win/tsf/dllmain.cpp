@@ -85,24 +85,39 @@ static HRESULT registerTextService() {
     setRegValue(HKEY_LOCAL_MACHINE, sub, L"IconFile", path);
     setRegValue(HKEY_LOCAL_MACHINE, sub, L"IconIndex", L"0");
 
-    // 4) 类别注册：键盘类别
-    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s",
-               clsid, FREEWB_CATEGORY_KEYBOARD, FREEWB_PROFILE_GUID);
-    setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
+    // 4) 类别注册
+    //    系统按 CLSID 查类别，所以正向表 Category\Category\{catid}\{CLSID}
+    //    与反向表 Category\Item\{CLSID}\{catid} 都要写。
+    //    早期版本把 {CLSID} 写成了语言配置 GUID，导致系统认为该 TIP 不属于任何类别，
+    //    表现就是“设置里能加、返回即失效”。
+    static const wchar_t *kCategories[] = {
+        FREEWB_CATEGORY_KEYBOARD,                        // GUID_TFCAT_TIP_KEYBOARD
+        L"{13A016DF-560B-46CD-947A-4C3AF1E0E35D}",       // GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT
+        L"{25504FB4-7BAB-4BC1-9C69-CF81890F0EF5}",       // GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT
+    };
+    for (const wchar_t *cat : kCategories) {
+        swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s", clsid, cat, clsid);
+        setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
 
-    // 5) 现代能力位（UI 元素 / 系统托盘 / 沉浸式 UWP 支持）
-    //    GUID_TFCAT_TIPCAP_UIELEMENTENABLED
-    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s",
-               clsid, L"{F4BAA7A3-DC22-4D68-9F17-2A3D46CB3B4D}", FREEWB_PROFILE_GUID);
-    setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
-    //    GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT
-    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s",
-               clsid, L"{25504FB4-7BAB-4BC1-9C69-CF81890F0EF5}", FREEWB_PROFILE_GUID);
-    setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
-    //    GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT
-    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s",
-               clsid, L"{13A016DF-560B-46CD-947A-4C3AF1E0E35D}", FREEWB_PROFILE_GUID);
-    setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
+        swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Item\\%s\\%s", clsid, clsid, cat);
+        setRegValue(HKEY_LOCAL_MACHINE, sub, L"", L"");
+    }
+
+    // 5) 清理历史版本写错位置的键：
+    //    a) Category\Category\{catid}\{profileGUID}
+    //    b) 误当作 UIELEMENTENABLED 的 {F4BAA7A3-...}（本实现未提供 UI 元素）
+    //    注意 RegDeleteKey 不能删带子键的项，必须先删子键。
+    for (const wchar_t *cat : kCategories) {
+        swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s", clsid, cat,
+                   FREEWB_PROFILE_GUID);
+        RegDeleteKeyW(HKEY_LOCAL_MACHINE, sub);
+    }
+    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s\\%s", clsid,
+               L"{F4BAA7A3-DC22-4D68-9F17-2A3D46CB3B4D}", FREEWB_PROFILE_GUID);
+    RegDeleteKeyW(HKEY_LOCAL_MACHINE, sub);
+    swprintf_s(sub, L"SOFTWARE\\Microsoft\\CTF\\TIP\\%s\\Category\\Category\\%s", clsid,
+               L"{F4BAA7A3-DC22-4D68-9F17-2A3D46CB3B4D}");
+    RegDeleteKeyW(HKEY_LOCAL_MACHINE, sub);
 
     // 6) 运行时注册：ITfInputProcessorProfiles
     ITfInputProcessorProfiles *pProfiles = nullptr;

@@ -4,7 +4,7 @@
 [Setup]
 AppId={{FreeIME11-11.0.1}
 AppName=极点五笔 11
-AppVersion=11.0.2
+AppVersion=11.0.3
 AppPublisher=FreeIME Project
 AppPublisherURL=https://github.com/bbqldhd/jidian-wubi
 AppSupportURL=https://gitee.com/red-egg-carrying-ice-cream/jidian-wubi
@@ -12,7 +12,7 @@ DefaultDirName={autopf}\FreeIME11
 DefaultGroupName=极点五笔 11
 DisableProgramGroupPage=yes
 OutputDir=..\build
-OutputBaseFilename=FreeIME11-11.0.2-setup
+OutputBaseFilename=FreeIME11-11.0.3-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -31,7 +31,9 @@ Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; GroupDescripti
 
 [Files]
 ; 程序文件 -> Program Files\FreeIME11
-Source: "..\build\FreeIME11.dll"; DestDir: "{app}"; Flags: ignoreversion uninsrestartdelete
+; TSF DLL 常被输入法宿主（explorer/ctfmon/TextInputHost）加载，
+; 升级时无法直接覆盖，用 restartreplace 安排重启后替换，否则会静默保留旧版。
+Source: "..\build\FreeIME11.dll"; DestDir: "{app}"; Flags: ignoreversion restartreplace uninsrestartdelete
 Source: "..\build\freeime11-migrate.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\freeime11-settings.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\freeime11-uninstall.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -44,10 +46,9 @@ Source: "..\..\upstream-freewb\data\dict\freeime_chinese_dict.db"; DestDir: "{ap
 [Run]
 ; 注册 TSF 文本服务
 Filename: "regsvr32.exe"; Parameters: "/s ""{app}\FreeIME11.dll"""; Flags: runhidden; StatusMsg: "注册输入法..."
-; 将输入法加入当前用户语言列表（以原用户身份，确保写入正确的 HKCU）
-Filename: "{app}\freeime11-addlang.exe"; Flags: runhidden runasoriginaluser; StatusMsg: "添加输入法到语言列表..."
-; 打开语言设置，引导用户添加键盘（Windows 11 语言列表需用户确认一次）
-Filename: "ms-settings:regionlanguage"; Description: "打开语言设置，添加「极点五笔 11」"; Flags: postinstall shellexec nowait skipifsilent
+; 将输入法加入当前用户语言列表（以原用户身份，确保写入正确的 HKCU）。
+; v11.0.3 起会自动写入 REG_DWORD 语言列表项，装完即可用，不再需要引导用户手动添加。
+Filename: "{app}\freeime11-addlang.exe"; Flags: runhidden runasoriginaluser; StatusMsg: "启用输入法..."
 
 [UninstallRun]
 ; 注销 TSF 文本服务
@@ -101,7 +102,9 @@ begin
   begin
     A := PopToken(Rest);
     B := PopToken(Rest);
-    if (Pos('freeime11', Lowercase(A)) = 0) and (Pos('freeime11', Lowercase(B)) = 0) then
+    // 只剔除「指向本程序目录的纯删除项」（目标为空）。
+    // 目标非空的是改名/替换（restartreplace），必须保留，否则升级后仍是旧文件。
+    if (Pos('freeime11', Lowercase(A)) = 0) or (B <> '') then
       Keep := Keep + A + #0 + B + #0
     else
       Changed := True;
