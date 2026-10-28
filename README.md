@@ -199,6 +199,10 @@ See the Mulan PSL v2 for more details.
 
 每个源文件头部均带有同一段声明（按语言注释语法书写），由 `tools/add_license_headers.py` 统一注入。
 
+注：根目录 `LICENSE` 保留官方许可证原文（含 `[Year]` / `[Software Name]` 占位符），
+以便 GitHub / Gitee 自动识别为 Mulan PSL v2.0；本项目的实际权利声明见上方代码块、`NOTICE`
+以及各源文件头部。
+
 - 你可以自由使用、修改、分发本软件（含商业用途），但须保留版权与许可声明，并在分发时附上许可证副本。
 - `src/engine/`、`src/utils/` 中的引擎代码派生自 [FreeWB](https://gitee.com/openkylin/freewb)，版权归其贡献者所有，同样以 Mulan PSL v2.0 分发。
 - `third_party/spdlog` 为 MIT 许可；SQLite 为 Public Domain；libiconv 为 LGPL-2.1+（MinGW 运行库，静态链接）。详见 `NOTICE`。
