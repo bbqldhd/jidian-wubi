@@ -1,3 +1,15 @@
+<!--
+  SPDX-License-Identifier: MulanPSL-2.0
+  Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司 (Charry)
+  FreeIME 11 is licensed under Mulan PSL v2.
+  You can use this software according to the terms and conditions of the Mulan PSL v2.
+  You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
+  THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+  EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+  MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+  See the Mulan PSL v2 for more details.
+-->
+
 # 极点五笔 11 (FreeIME 11)
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
@@ -9,6 +21,14 @@
 保持原版的按键逻辑、候选交互、配置项与用户词典语义不变，仅做现代 Windows 兼容适配。
 
 > 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
+
+[![License](https://img.shields.io/badge/license-Mulan%20PSL%20v2-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/release-v11.0.8-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
+
+| 平台 | 地址 |
+|---|---|
+| GitHub | https://github.com/bbqldhd/jidian-wubi |
+| Gitee  | https://gitee.com/red-egg-carrying-ice-cream/jidian-wubi |
 
 ## 目录结构
 
@@ -167,16 +187,17 @@ bash build_mingw.sh
 许可证全文见 [`LICENSE`](LICENSE)，第三方组件与来源说明见 [`NOTICE`](NOTICE)。
 
 ```
-Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
+Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司 (Charry)
 FreeIME 11 is licensed under Mulan PSL v2.
 You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at:
-            http://license.coscl.org.cn/MulanPSL2
+You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
 THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
 EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details.
 ```
+
+每个源文件头部均带有同一段声明（按语言注释语法书写），由 `tools/add_license_headers.py` 统一注入。
 
 - 你可以自由使用、修改、分发本软件（含商业用途），但须保留版权与许可声明，并在分发时附上许可证副本。
 - `src/engine/`、`src/utils/` 中的引擎代码派生自 [FreeWB](https://gitee.com/openkylin/freewb)，版权归其贡献者所有，同样以 Mulan PSL v2.0 分发。

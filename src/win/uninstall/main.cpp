@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MulanPSL-2.0
-// Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司
-// 本文件以木兰宽松许可证第 2 版授权，许可证全文见项目根目录 LICENSE。
+// Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司 (Charry)
+// FreeIME 11 is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+// EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+// MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
 
 // FreeIME 11 —— 卸载程序（Windows）
 // 注销 TSF 文本服务、删除安装文件，可选删除用户词典与配置。
