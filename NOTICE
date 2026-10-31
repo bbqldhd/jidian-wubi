@@ -1,5 +1,5 @@
-FreeIME 11（极点五笔 11）
-Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司 (Charry)
+Freeime11（极点五笔 11）
+Copyright (c) 2026 Charry
 
 Project home:
   GitHub: https://github.com/bbqldhd/jidian-wubi
@@ -12,7 +12,7 @@ http://license.coscl.org.cn/MulanPSL2 获取。
 除非适用法律要求或书面同意，按本许可证分发的软件均按「现状」提供，
 不附带任何明示或默示的担保。
 
-FreeIME 11 is licensed under Mulan PSL v2.
+Freeime11 is licensed under Mulan PSL v2.
 You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
 
 每个源文件头部均带有同一段声明（按语言注释语法书写），由 tools/add_license_headers.py 统一注入。

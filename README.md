@@ -1,7 +1,7 @@
 <!--
   SPDX-License-Identifier: MulanPSL-2.0
-  Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司 (Charry)
-  FreeIME 11 is licensed under Mulan PSL v2.
+  Copyright (c) 2026 Charry
+  Freeime11 is licensed under Mulan PSL v2.
   You can use this software according to the terms and conditions of the Mulan PSL v2.
   You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
   THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
@@ -208,8 +208,8 @@ bash build_mingw.sh
 许可证全文见 [`LICENSE`](LICENSE)，第三方组件与来源说明见 [`NOTICE`](NOTICE)。
 
 ```
-Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司 (Charry)
-FreeIME 11 is licensed under Mulan PSL v2.
+Copyright (c) 2026 Charry
+Freeime11 is licensed under Mulan PSL v2.
 You can use this software according to the terms and conditions of the Mulan PSL v2.
 You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
 THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
@@ -220,9 +220,9 @@ See the Mulan PSL v2 for more details.
 
 每个源文件头部均带有同一段声明（按语言注释语法书写），由 `tools/add_license_headers.py` 统一注入。
 
-注：根目录 `LICENSE` 保留官方许可证原文（含 `[Year]` / `[Software Name]` 占位符），
-以便 GitHub / Gitee 自动识别为 Mulan PSL v2.0；本项目的实际权利声明见上方代码块、`NOTICE`
-以及各源文件头部。
+注：根目录 `LICENSE` 已按许可证要求填入实际信息（`Copyright (c) 2026 Charry` / `Freeime11`）。
+GitHub 的许可证自动识别对木兰许可证较严格，填入真实信息后会显示为 `Other`（Gitee 仍识别为
+MulanPSL-2.0）；如需 GitHub 侧显示许可证徽标，可把这两处改回官方占位符。
 
 - 你可以自由使用、修改、分发本软件（含商业用途），但须保留版权与许可声明，并在分发时附上许可证副本。
 - `src/engine/`、`src/utils/` 中的引擎代码派生自 [FreeWB](https://gitee.com/openkylin/freewb)，版权归其贡献者所有，同样以 Mulan PSL v2.0 分发。

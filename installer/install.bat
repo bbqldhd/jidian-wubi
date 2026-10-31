@@ -1,6 +1,6 @@
 REM SPDX-License-Identifier: MulanPSL-2.0
-REM Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司 (Charry)
-REM FreeIME 11 is licensed under Mulan PSL v2.
+REM Copyright (c) 2026 Charry
+REM Freeime11 is licensed under Mulan PSL v2.
 REM You can use this software according to the terms and conditions of the Mulan PSL v2.
 REM You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
 REM THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,

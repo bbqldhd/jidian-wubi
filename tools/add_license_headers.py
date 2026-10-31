@@ -21,8 +21,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 NOTICE = [
     "SPDX-License-Identifier: MulanPSL-2.0",
-    "Copyright (c) 2026 沈阳蜂蒿文化传媒有限公司 (Charry)",
-    "FreeIME 11 is licensed under Mulan PSL v2.",
+    "Copyright (c) 2026 Charry",
+    "Freeime11 is licensed under Mulan PSL v2.",
     "You can use this software according to the terms and conditions of the Mulan PSL v2.",
     "You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2",
     'THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,',
