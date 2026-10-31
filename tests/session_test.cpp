@@ -66,9 +66,10 @@ int main() {
     assert(s.wantsKey('R', false, false, false));
     assert(!s.wantsKey('R', true, false, false));
 
-    // 3) 中英文切换（右 Shift）
+    // 3) 中英文切换（右 Shift；TSF 前端另有“Shift 单击”判定，这里守会话状态机）
     o = s.processKey(0xA1 /*VK_RSHIFT*/, true, false, false);
     assert(o.handled);
+    assert(s.englishMode());   // 工具栏的 中/英 按钮读这个状态
 
     // 英文态：整键放行，不吞键
     assert(!s.wantsKey('R', false, false, false));

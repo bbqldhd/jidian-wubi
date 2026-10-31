@@ -58,6 +58,7 @@ public:
     bool chinesePunc() const;
     bool fullShape() const;
     bool simpTrad() const;   // true=简入繁出
+    bool englishMode() const; // true=英文态（工具栏中/英按钮用）
     // 引擎名与状态
     std::string engineName() const; // "wbzx" | "wbpy" | "py" | "en"
 
@@ -99,6 +100,9 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+
+    // 按配置 inputMode 选择输入方案（engine:wbzx / engine:wbpy / engine:py / engine:en）
+    void applyEngineFromSettings();
 };
 
 // Windows 虚拟键码 → 引擎可识别的码元（字母/数字/符号）。返回 '\0' 表示不可编码。

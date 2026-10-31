@@ -16,6 +16,7 @@
 
 #include "FreeIME11Service.h"
 #include "CandidateWindow.h"
+#include "ToolbarWindow.h"
 
 // MinGW 的 libuuid 缺少部分 TSF GUID，msctf.h 中仅 extern 声明，此处提供定义
 EXTERN_C const GUID GUID_PROP_COMPOSING = {0xE12AC060, 0xAF15, 0x11D2, {0xAF, 0xC5, 0x00, 0x11, 0x05, 0xA2, 0x79, 0x9B}};
@@ -173,6 +174,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         g_hInst = hinst;
         DisableThreadLibraryCalls(hinst);
         CandidateWindow::setInstanceHandle(hinst);
+        ToolbarWindow::setInstanceHandle(hinst);
     }
     return TRUE;
 }

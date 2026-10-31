@@ -68,7 +68,7 @@ struct Session::Impl {
     std::unique_ptr<Wbpy> wbpy;
     std::unique_ptr<En> en;
 
-    int engineIdx = 0; // 0 wbzx, 1 wbpy, 2 py, 3 en
+    int engineIdx = 1; // 0 wbzx, 1 wbpy, 2 py, 3 en（默认五笔拼音）
     enum EngineKind { kWbzx = 0, kWbpy = 1, kPy = 2, kEn = 3 };
 
     // 会话状态
@@ -182,6 +182,27 @@ Session::Session() : impl_(new Impl()) {
     im.py = std::make_unique<PyEngine>();
     im.wbpy = std::make_unique<Wbpy>(im.wbzx.get(), im.py.get());
     im.en = std::make_unique<En>();
+
+    applyEngineFromSettings();
+}
+
+void Session::applyEngineFromSettings() {
+    auto &im = *impl_;
+    const std::string mode = settings::instance().get_inputMode();
+    if (mode.rfind("engine:", 0) != 0) return;
+
+    const std::string name = mode.substr(7);
+    int idx = im.engineIdx;
+    if (name == "wbzx") idx = Impl::kWbzx;
+    else if (name == "wbpy") idx = Impl::kWbpy;
+    else if (name == "py") idx = Impl::kPy;
+    else if (name == "en") idx = Impl::kEn;
+    else return;
+
+    if (idx != im.engineIdx) {
+        im.engineIdx = idx;
+        im.resetSession();
+    }
 }
 
 Session::~Session() = default;
@@ -190,6 +211,7 @@ bool Session::loadSettings(const std::string &dataDir) {
     (void)dataDir;
     settings::instance().reload();
     impl_->pageSize_ = std::max(1, settings::instance().get_candiWordCount());
+    applyEngineFromSettings();
     return true;
 }
 
@@ -198,6 +220,7 @@ void Session::reset() { impl_->resetSession(); }
 bool Session::chinesePunc() const { return settings::instance().get_chinesePunc(); }
 bool Session::fullShape() const { return settings::instance().get_fullWidthFlg(); }
 bool Session::simpTrad() const { return settings::instance().get_simpTradFlg(); }
+bool Session::englishMode() const { return impl_->englishMode_; }
 std::string Session::engineName() const {
     switch (impl_->engineIdx) {
     case Impl::kWbpy: return "wbpy";
@@ -212,8 +235,25 @@ void Session::toggleFullShape() { settings::instance().set_fullWidthFlg(!fullSha
 void Session::toggleChinesePunc() { settings::instance().set_chinesePunc(!chinesePunc()); }
 void Session::toggleSimpTrad() { settings::instance().set_simpTradFlg(!simpTrad()); }
 void Session::cycleEngine() {
-    impl_->engineIdx = (impl_->engineIdx + 1) % 4;
-    impl_->resetSession();
+    auto &im = *impl_;
+    // 只在三种编码方案之间轮转（英文态由中/英切换负责，不作为方案）
+    bool enabled[3] = {settings::instance().get_WbzxEngine(), settings::instance().get_WbpyEngine(),
+                       settings::instance().get_PyEngine()};
+    if (!enabled[0] && !enabled[1] && !enabled[2]) enabled[0] = enabled[1] = enabled[2] = true;
+
+    const int cur = (im.engineIdx >= 0 && im.engineIdx < 3) ? im.engineIdx : 0;
+    int next = cur;
+    for (int step = 1; step <= 3; ++step) {
+        const int cand = (cur + step) % 3;
+        if (enabled[cand]) {
+            next = cand;
+            break;
+        }
+    }
+    im.engineIdx = next;
+    im.resetSession();
+    // 记住选择：下次激活/重启仍用这个方案
+    settings::instance().set_inputMode("engine:" + engineName());
 }
 
 char vkToCodeChar(int vk, bool shift) {

@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "../../session/session.h"
+#include "ToolbarWindow.h"
 
 // GUID 定义（全部重新生成，与旧版 10.8.9 无冲突，可并存安装）
 #define FREEWB_TEXTSERVICE_CLSID   L"{B6F2C8A1-7D4E-4F1A-9C3B-2E5D8A7F6E10}"
@@ -114,6 +115,16 @@ private:
     // 候选窗鼠标回调
     void onCandidateSelected(int index);
     void onCandidatePage(int delta);
+    // 工具栏按钮回调
+    void onToolbarAction(ToolbarAction action);
+    // 把会话状态推给工具栏（中/英、全/半、标点、简繁、方案）
+    void syncToolbar();
+    // 打开设置程序（与 DLL 同目录的 freeime11-settings.exe）
+    void launchSettings() const;
+    // 工具栏只在“有可用编辑上下文”时显示，避免每个线程各弹一条
+    void updateToolbarVisibility();
+    // Shift 单击（其间没按别的键）切中英
+    void toggleEnglishFromShortcut();
     HRESULT requestEdit(EditSessionType type, const std::string &textUtf8, const std::string &preeditUtf8,
                         const std::vector<std::wstring> &cands, int cursor = 0, bool hasPrev = false,
                         bool hasNext = false, const std::string &aux = std::string());
@@ -147,6 +158,12 @@ private:
     bool compositionStarted_ = false;
     // 该上下文不支持 TSF 组合（终端、部分 Electron 应用）：降级为只出候选窗、直接上屏
     bool compositionUnsupported_ = false;
+
+    // 用户点了工具栏的「×」：本次激活内不再自动弹出
+    bool toolbarDismissed_ = false;
+
+    // Shift 按下后是否还没按过别的键（决定松开时算不算一次“单击”）
+    bool shiftTapPending_ = false;
 
     std::unique_ptr<freeime11::Session> session_;
 };

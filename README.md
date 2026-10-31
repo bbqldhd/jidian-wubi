@@ -14,7 +14,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.0.8**。
+版本号 **11.1.0**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -23,7 +23,7 @@
 > 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
 
 [![License](https://img.shields.io/badge/license-Mulan%20PSL%20v2-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v11.0.8-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
+[![Release](https://img.shields.io/badge/release-v11.1.0-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
 
 | 平台 | 地址 |
 |---|---|
@@ -40,11 +40,11 @@ freeime11-win/
 │   ├── utils/               # 配置/键码/sqlite/UTF 转换等（vendor 自 FreeWB，已做 Windows 补丁）
 │   ├── session/             # 跨平台输入会话层（复刻 10.8.9 按键/候选/标点/造词行为）
 │   └── win/
-│       ├── tsf/             # TSF 文本服务（ITfTextInputProcessorEx 等）
+│       ├── tsf/             # TSF 文本服务、候选窗、状态工具栏
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序
-├── cmake/                   # 版本资源 11.0.8、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.1.0、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -85,7 +85,7 @@ bash build_mingw.sh
 
 ## 安装
 
-1. 运行 `FreeIME11-11.0.8-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+1. 运行 `FreeIME11-11.1.0-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
    写入「添加/删除程序」、创建开始菜单快捷方式）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
@@ -102,6 +102,27 @@ bash build_mingw.sh
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.1.0：输入法状态工具栏
+
+- **新增浮动工具栏**：跟随当前编辑窗口出现，可拖动、位置记忆（`HKCU\Software\FreeIME11\Toolbar`），
+  点它不抢焦点，因此不会打断正在进行的输入。
+- **按钮**：`中/英`、`半/全`、`，。/,.`、`简/繁`、`五笔/五拼/拼音/英文`、`设置`、`×`。
+  开关类按钮点亮淡蓝底 + 蓝字；右 Shift 切中英、快捷键切方案时工具栏同步刷新。
+- **只在有编辑上下文时出现**：每个线程都可能创建一个文本服务实例，若在 `Activate` 里无条件弹窗，
+  切窗口时会叠出多条工具栏；现在改为接管到焦点上下文才显示、焦点离开文档即收起，`×` 只收起本次激活。
+- **切换中英/方案时清理组合**：若正在组字，先结束组合并清掉文档里的编码串，避免残留字母。
+- **`设置` 直接拉起同目录的 `freeime11-settings.exe`**。
+- **Shift 单击切换中英**：左/右 Shift 都支持。实现要点是必须先把 Shift 的按下/抬起事件
+  「吃下」——`OnTestKeyDown` 返回 `FALSE` 时 TSF 根本不会回调 `OnKeyDown`，原来在按下阶段
+  切换永远等不到事件，这就是「按 Shift 没反应」的根因。现在按下只记录，**松开时**才判定：
+  期间只要出现过任何其它按键（含被放行的方向键、Ctrl 组合）就取消，所以 Shift+字母大写、
+  Shift+方向键选区都不会误切。
+- **默认输入方案改为五笔拼音**：`inputMode` 默认 `engine:wbpy`；启动时按该配置选方案，
+  工具栏切换方案会写回配置，下次仍是上次用的方案。方案轮转只在 五笔 / 五笔拼音 / 拼音 之间，
+  并遵循 `WbzxEngine`/`WbpyEngine`/`PyEngine` 三个开关。
+- 自测：`tests/toolbar_window_test.cpp`（显示、`MA_NOACTIVATE`、逐个按钮命中与回调、
+  状态切换不改变整体宽度、位置记忆）通过。
 
 ## v11.0.8：选词后候选窗不收
 

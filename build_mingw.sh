@@ -36,13 +36,18 @@ echo "[1b] 编译候选窗自测（显示/命中/悬停/点选）..."
 "$GPP" -std=c++17 -O2 -DUNICODE -D_UNICODE -Isrc/win/tsf tests/candidate_window_test.cpp \
   src/win/tsf/CandidateWindow.cpp -lgdiplus -lgdi32 -luser32 -static -o build/candidate_window_test.exe
 
+echo "[1c] 编译工具栏自测（显示/不抢焦点/命中/点击/位置）..."
+"$GPP" -std=c++17 -O2 -DUNICODE -D_UNICODE -Isrc/win/tsf tests/toolbar_window_test.cpp \
+  src/win/tsf/ToolbarWindow.cpp -lgdiplus -lgdi32 -luser32 -ladvapi32 -static -o build/toolbar_window_test.exe
+
 echo "[2/5] 编译版本资源..."
 "$WINDRES" -O coff --preprocessor="gcc -E -xc-header -DRC_INVOKED" installer/version.rc -o build/version.o
 
 echo "[3/5] 编译 TSF 输入法 DLL..."
 "$GPP" -shared $COMMON -DUNICODE -D_UNICODE -Isrc/win/tsf \
   $UTILS $ENGINE src/session/session.cpp \
-  src/win/tsf/FreeIME11Service.cpp src/win/tsf/dllmain.cpp src/win/tsf/CandidateWindow.cpp build/version.o \
+  src/win/tsf/FreeIME11Service.cpp src/win/tsf/dllmain.cpp \
+  src/win/tsf/CandidateWindow.cpp src/win/tsf/ToolbarWindow.cpp build/version.o \
   -liconv -lole32 -ladvapi32 -luuid -lshell32 -lgdi32 -lgdiplus -static \
   src/win/tsf/FreeIME11.def -o build/FreeIME11.dll
 

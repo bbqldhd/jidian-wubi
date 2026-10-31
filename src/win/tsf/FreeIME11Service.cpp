@@ -12,6 +12,9 @@
 #include "FreeIME11Service.h"
 
 #include "CandidateWindow.h"
+#include "ToolbarWindow.h"
+
+#include <shellapi.h>
 
 #include <cassert>
 #include <new>
@@ -32,6 +35,12 @@ std::wstring Utf8ToWide(const std::string &s) {
 bool isShiftDown() { return (::GetKeyState(VK_SHIFT) & 0x8000) != 0; }
 bool isCtrlDown() { return (::GetKeyState(VK_CONTROL) & 0x8000) != 0; }
 bool isAltDown() { return (::GetKeyState(VK_MENU) & 0x8000) != 0; }
+
+// 取本模块句柄用的地址锚点（GetModuleHandleEx 需要模块内地址）
+void modulePathAnchor() {}
+
+// 左/右 Shift 都算“Shift 键本体”，VK_SHIFT 是通用码（有些应用只发通用码）
+bool isShiftVk(int vk) { return vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT; }
 
 } // namespace
 
@@ -84,8 +93,9 @@ FreeIME11Service::FreeIME11Service() : session_(new freeime11::Session()) {
 }
 
 FreeIME11Service::~FreeIME11Service() {
-    // 候选窗是进程级单例，销毁前必须摘掉指向本对象的回调，避免悬空指针
+    // 候选窗/工具栏都是进程级单例，销毁前必须摘掉指向本对象的回调，避免悬空指针
     CandidateWindow::instance().setHandlers(nullptr, nullptr);
+    ToolbarWindow::instance().setHandler(nullptr);
     if (composition_) composition_->Release();
     if (contextComposition_) contextComposition_->Release();
     if (context_) context_->Release();
@@ -151,11 +161,18 @@ STDMETHODIMP FreeIME11Service::Activate(ITfThreadMgr *pThreadMgr, TfClientId tfC
     CandidateWindow::instance().setHandlers(
         [this](int index) { onCandidateSelected(index); },
         [this](int delta) { onCandidatePage(delta); });
+
+    // 状态工具栏：注册回调，是否显示由“有没有编辑上下文”决定
+    ToolbarWindow::instance().setHandler([this](ToolbarAction a) { onToolbarAction(a); });
+    syncToolbar();
+    updateToolbarVisibility();
     return S_OK;
 }
 
 STDMETHODIMP FreeIME11Service::Deactivate() {
     CandidateWindow::instance().hide();
+    ToolbarWindow::instance().hide();
+    toolbarDismissed_ = false;  // 下次切回输入法时重新允许弹出
     // 切走输入法时如果还在组字，先把编码串从文档里清掉（EndComposition 不会删除文字）
     if (context_ && composition_) clearCompositionOn(context_);
 
@@ -198,9 +215,9 @@ STDMETHODIMP FreeIME11Service::OnKeyDown(ITfContext *pic, WPARAM wParam, LPARAM 
 
     const bool shift = isShiftDown(), ctrl = isCtrlDown(), alt = isAltDown();
 
-    // 右 Shift 切中英：只切换、不吞键（吞掉会破坏应用里的 Shift 组合）
-    if (vk == VK_RSHIFT && shift && !ctrl && !alt) {
-        session_->toggleEnglish();
+    // Shift 只吃下、不切换：真正的判定在松开时做，Shift+字母/方向键不会误切中英
+    if (isShiftVk(vk)) {
+        *pfEaten = TRUE;
         return S_OK;
     }
 
@@ -209,6 +226,7 @@ STDMETHODIMP FreeIME11Service::OnKeyDown(ITfContext *pic, WPARAM wParam, LPARAM 
 
     freeime11::SessionOutcome out = session_->processKey(vk, shift, ctrl, alt);
     dispatchOutcome(out);
+    syncToolbar();
 
     if (out.handled) *pfEaten = TRUE;
     return S_OK;
@@ -248,21 +266,129 @@ void FreeIME11Service::onCandidatePage(int delta) {
     dispatchOutcome(session_->pageCandidates(delta));
 }
 
-STDMETHODIMP FreeIME11Service::OnKeyUp(ITfContext *, WPARAM, LPARAM, BOOL *) { return S_OK; }
+// ---------------------------------------------------------------- 工具栏
 
-STDMETHODIMP FreeIME11Service::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM, BOOL *pfEaten) {
+void FreeIME11Service::syncToolbar() {
+    ToolbarState st;
+    st.english = session_->englishMode();
+    st.fullShape = session_->fullShape();
+    st.chinesePunc = session_->chinesePunc();
+    st.simpTrad = session_->simpTrad();
+    st.engine = session_->engineName();
+    ToolbarWindow::instance().setState(st);
+}
+
+void FreeIME11Service::toggleEnglishFromShortcut() {
+    session_->toggleEnglish();
+    // 组字中切走：会话已复位，文档里的编码串要一并清掉
+    if (composition_) {
+        CandidateWindow::instance().hide();
+        requestEdit(ES_Clear, "", "", {});
+    }
+    syncToolbar();
+}
+
+void FreeIME11Service::onToolbarAction(ToolbarAction action) {
+    switch (action) {
+    case ToolbarAction::English:
+        session_->toggleEnglish();
+        if (composition_) {
+            CandidateWindow::instance().hide();
+            requestEdit(ES_Clear, "", "", {});
+        }
+        break;
+    case ToolbarAction::FullShape:
+        session_->toggleFullShape();
+        break;
+    case ToolbarAction::ChinesePunc:
+        session_->toggleChinesePunc();
+        break;
+    case ToolbarAction::SimpTrad:
+        session_->toggleSimpTrad();
+        break;
+    case ToolbarAction::Engine:
+        session_->cycleEngine();
+        break;
+    case ToolbarAction::Settings:
+        launchSettings();
+        return;
+    case ToolbarAction::Close:
+        // 只收起本次激活，下次切回输入法会重新出现
+        toolbarDismissed_ = true;
+        ToolbarWindow::instance().hide();
+        return;
+    default:
+        return;
+    }
+
+    // 中英/方案切换会重置会话：正在组字时把留在文档里的编码串清掉
+    if (action == ToolbarAction::English || action == ToolbarAction::Engine) {
+        if (composition_) {
+            CandidateWindow::instance().hide();
+            requestEdit(ES_Clear, "", "", {});
+        }
+    }
+    syncToolbar();
+}
+
+void FreeIME11Service::launchSettings() const {
+    HMODULE mod = nullptr;
+    if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                              reinterpret_cast<LPCWSTR>(&modulePathAnchor), &mod) ||
+        !mod) {
+        return;
+    }
+
+    wchar_t path[MAX_PATH]{};
+    if (!::GetModuleFileNameW(mod, path, MAX_PATH)) return;
+    wchar_t *slash = wcsrchr(path, L'\\');
+    if (!slash) return;
+    *(slash + 1) = L'\0';
+    wcscat_s(path, L"freeime11-settings.exe");
+    ::ShellExecuteW(nullptr, L"open", path, nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+STDMETHODIMP FreeIME11Service::OnKeyUp(ITfContext *, WPARAM wParam, LPARAM, BOOL *pfEaten) {
+    *pfEaten = FALSE;
+    const int vk = static_cast<int>(wParam);
+    if (!isShiftVk(vk)) return S_OK;
+
+    *pfEaten = TRUE;
+    // 只有“按下后没碰过任何其它键”的 Shift 才算一次中英切换
+    const bool tap = shiftTapPending_ && !isCtrlDown() && !isAltDown();
+    shiftTapPending_ = false;
+    if (tap) toggleEnglishFromShortcut();
+    return S_OK;
+}
+
+STDMETHODIMP FreeIME11Service::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *pfEaten) {
     *pfEaten = FALSE;
     const int vk = static_cast<int>(wParam);
     const bool shift = isShiftDown(), ctrl = isCtrlDown(), alt = isAltDown();
 
-    // 右 Shift 只用于切换，不吞（与 OnKeyDown 保持一致）
-    if (vk == VK_RSHIFT) return S_OK;
+    // Shift 必须被“吃下”，否则 TSF 根本不会回调 OnKeyDown/OnKeyUp，
+    // 也就永远等不到“松开”这个时机去做切换（这正是之前在按下阶段切换失效的原因）。
+    if (isShiftVk(vk) && !ctrl && !alt) {
+        // 长按的重复键不能把已被其它键取消的标记重新点亮
+        if (!(lParam & 0x40000000)) shiftTapPending_ = true;
+        *pfEaten = TRUE;
+        return S_OK;
+    }
+
+    // 这里能看到所有按键（包括最终被放行的），任何其它键都取消“Shift 单击”判定
+    shiftTapPending_ = false;
 
     *pfEaten = session_->wantsKey(vk, shift, ctrl, alt) ? TRUE : FALSE;
     return S_OK;
 }
 
-STDMETHODIMP FreeIME11Service::OnTestKeyUp(ITfContext *, WPARAM, LPARAM, BOOL *) { return S_OK; }
+STDMETHODIMP FreeIME11Service::OnTestKeyUp(ITfContext *, WPARAM wParam, LPARAM, BOOL *pfEaten) {
+    *pfEaten = FALSE;
+    const int vk = static_cast<int>(wParam);
+    // 与按下时保持一致地吃下，才能稳定收到 OnKeyUp
+    if (isShiftVk(vk) && !isCtrlDown() && !isAltDown()) *pfEaten = TRUE;
+    return S_OK;
+}
 STDMETHODIMP FreeIME11Service::OnPreservedKey(ITfContext *, REFGUID, BOOL *) { return E_NOTIMPL; }
 STDMETHODIMP FreeIME11Service::OnSetFocus(BOOL) { return S_OK; }
 
@@ -277,9 +403,15 @@ STDMETHODIMP FreeIME11Service::OnSetFocus(ITfDocumentMgr *pdimFocus, ITfDocument
 
     ITfContext *pic = nullptr;
     if (pdimFocus && SUCCEEDED(pdimFocus->GetTop(&pic)) && pic) {
-        adoptContext(pic);
+        adoptContext(pic);  // 内部会按上下文刷新工具栏可见性
         pic->Release();
+    } else {
+        // 焦点离开所有文档（点桌面、切到无输入框的窗口）：释放上下文并收起工具栏。
+        // 这里必须真的清掉 context_，否则回到同一个文档时 adoptContext 会提前返回，
+        // 工具栏再也不会重新出现。
+        adoptContext(nullptr);
     }
+    shiftTapPending_ = false;
     session_->reset();
     return S_OK;
 }
@@ -395,6 +527,20 @@ void FreeIME11Service::adoptContext(ITfContext *pic) {
         context_ = pic;
         context_->AddRef();
         context_->QueryInterface(IID_ITfContextComposition, (void **)&contextComposition_);
+    }
+    // 接管上下文就意味着“输入法在这个窗口可用”，此时才显示工具栏；
+    // 没有上下文的激活（后台线程、非焦点线程）不显示，避免多出几条重复的工具栏。
+    updateToolbarVisibility();
+}
+
+void FreeIME11Service::updateToolbarVisibility() {
+    if (context_ && !toolbarDismissed_) {
+        if (!ToolbarWindow::instance().visible()) {
+            syncToolbar();
+            ToolbarWindow::instance().show();
+        }
+    } else {
+        ToolbarWindow::instance().hide();
     }
 }
 
