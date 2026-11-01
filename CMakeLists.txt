@@ -12,7 +12,7 @@
 # 目标：Windows 10 1809+ / Windows 11 26H2；架构 x64 / ARM64。
 cmake_minimum_required(VERSION 3.20)
 
-project(FreeIME11 VERSION 11.1.0 LANGUAGES C CXX)
+project(FreeIME11 VERSION 11.1.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

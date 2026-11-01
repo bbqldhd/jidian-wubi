@@ -68,6 +68,12 @@ public:
         return static_cast<uint32_t>(iCodeLength_);
     }
 
+    /** 单次查询最多返回多少条候选（供引擎侧拼装候选时对齐上限）。 */
+    static std::size_t maxCandidatesPerQuery()
+    {
+        return kMaxCandidatesPerQuery;
+    }
+
     const std::string &tableName() const
     {
         return tableName_;

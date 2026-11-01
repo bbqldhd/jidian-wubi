@@ -14,7 +14,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.1.0**。
+版本号 **11.1.1**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -23,7 +23,7 @@
 > 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
 
 [![License](https://img.shields.io/badge/license-Mulan%20PSL%20v2-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v11.1.0-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
+[![Release](https://img.shields.io/badge/release-v11.1.1-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
 
 | 平台 | 地址 |
 |---|---|
@@ -44,7 +44,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序
-├── cmake/                   # 版本资源 11.1.0、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.1.1、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -85,7 +85,7 @@ bash build_mingw.sh
 
 ## 安装
 
-1. 运行 `FreeIME11-11.1.0-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+1. 运行 `FreeIME11-11.1.1-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
    写入「添加/删除程序」、创建开始菜单快捷方式）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
@@ -102,6 +102,33 @@ bash build_mingw.sh
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.1.1：拼音整句输入
+
+**问题**：拼音引擎只做「整串前缀匹配」——只有词库里存在这一整串编码才出候选。实测词库最长
+词条 11 个汉字、最长编码 32 个字母，所以拼音模式实际上「一次只能出一个词」，打一串长拼音
+（`woxihuanni`、`jintiantianqi`）直接 0 候选，什么也上不了屏。
+
+**改动**
+
+1. **整句组词**：整串在词库里查不到时，按音节把它切成若干词再拼成一整句，最多给 3 条整句
+   候选。词库里有整词时行为完全不变。
+2. **切分算法**：从后往前的动态规划，`best[i]` = 把 `code[i..]` 全部切成词能拿到的最高分。
+   每个位置只试 1~32 个字母，候选直接查词组表/单字表的哈希，整体复杂度 `O(n×32)`，
+   实测 48 个字母逐键重算合计 **3ms**。
+3. **打分规则**：每多切一段 −1（整串音节总数固定，所以「段数最少」等价于「尽量用长词」），
+   同分取更长的切法。
+4. **两条质量约束**（否则会拼出乱码）：
+   - 候选词的字数必须等于它编码的音节数 —— 挡掉词库里的简码/缩写码（`wo→玩偶`、`hua→护岸`）；
+   - 多音节片段里不允许夹单字母音节 —— 挡掉 `n+de→恩德`、`n+qi→暖气` 这类硬切噪声。
+5. **排序保守**：整串有完整匹配、或已有前缀候选时，整句一律排在**末尾**；只有原本「0 候选」
+   的情况才顶到第一位。打字过程中看到的前缀候选顺序不受任何影响。
+6. **长度上限**：整句切分只在 ≤128 个字母时进行（约 40 个汉字以上），超长输入只做原有前缀
+   匹配，避免每个按键都跑大 DP。单次上屏字数从「受词库词条限制（≤11 字）」提升到「约 40 字」。
+
+**效果**：`woxihuanni` → 我喜欢你；`woxihuannima` → 我喜欢你吗；`jintiantianqizhenhao` →
+今天天气真好。`nihao` 仍是唯一候选「你好」，`niha` 仍是「你好」在前，`abc`/`zzzzzzzz` 这类
+非法串仍不产生候选 —— 原有行为零回归。
 
 ## v11.1.0：输入法状态工具栏
 
