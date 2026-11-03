@@ -14,7 +14,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.1.1**。
+版本号 **11.1.2**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -23,7 +23,7 @@
 > 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
 
 [![License](https://img.shields.io/badge/license-Mulan%20PSL%20v2-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v11.1.1-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
+[![Release](https://img.shields.io/badge/release-v11.1.2-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
 
 | 平台 | 地址 |
 |---|---|
@@ -44,7 +44,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序
-├── cmake/                   # 版本资源 11.1.1、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.1.2、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -85,7 +85,7 @@ bash build_mingw.sh
 
 ## 安装
 
-1. 运行 `FreeIME11-11.1.1-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+1. 运行 `FreeIME11-11.1.2-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
    写入「添加/删除程序」、创建开始菜单快捷方式）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
@@ -102,6 +102,30 @@ bash build_mingw.sh
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.1.2：修 3 个 bug
+
+**严重 · 拼音整句被自动上屏截断**（v11.1.1 的核心功能实际不可用）
+默认「五笔拼音」方案下打 `woxihuanni`，到第 6 个键 `woxihu` 时只有一条整句候选，
+触发自动上屏变成「我西湖」，一句话永远打不完。根因是自动上屏规则写成
+`minLen = (engineIdx == kWbzx) ? 4 : 2` —— `else` 把拼音也算成「2 码」。
+现在按方案区分：五笔仍是「满 4 码唯一 / 简码唯一」；五笔拼音只认「满 4 码 **且** 是五笔精确码」；
+纯拼音与英文一律不自动上屏，靠空格/数字确认。
+
+**严重 · 异步编辑请求可能写错窗口**
+`EditRequest` 排队等 TSF 执行期间若焦点切到了别的程序，`applyEdit` 用的是**当前**的
+`context_`，但 `TfEditCookie` 属于**旧**上下文——拿 A 的 cookie 去改 B 的文档，
+轻则失败重则把字插进别的程序。现在请求携带发起时的 `ITfContext`（AddRef），执行时比对，
+不一致就丢弃；例外是 `ES_Clear`，它带着自己的组合对象，必须执行，否则旧文档里的编码串会残留。
+
+**中 · 组字中按数字会漏进文档**
+拼音打到没有候选时（如 `woxih`）按 `1`，会走 `else if (isDigit) return out;`，
+`handled=false` → 数字被打进文档，把编码打断。现在组字中吞掉数字，并把当前编码
+`fillOutcome` 原样回填，否则上层会当成空结果把组合区清掉。
+
+**自测**：新增 `tests/autocommit_test.cpp`，覆盖 五笔 / 五笔拼音 / 拼音 三种方案 ×
+6 个场景（4 码唯一自动上屏、五笔拼音不被截断、拼音整句、空格确认、组字中数字吞掉），
+已接入 `build_mingw.sh`。另跑 30 万次随机按键的模糊测试，无崩溃。
 
 ## v11.1.1：拼音整句输入
 

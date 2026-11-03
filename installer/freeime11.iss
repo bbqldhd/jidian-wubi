@@ -14,7 +14,7 @@
 [Setup]
 AppId={{FreeIME11-11.0.1}
 AppName=极点五笔 11
-AppVersion=11.1.1
+AppVersion=11.1.2
 AppPublisher=FreeIME Project
 AppPublisherURL=https://github.com/bbqldhd/jidian-wubi
 AppSupportURL=https://gitee.com/red-egg-carrying-ice-cream/jidian-wubi
@@ -22,7 +22,7 @@ DefaultDirName={autopf}\FreeIME11
 DefaultGroupName=极点五笔 11
 DisableProgramGroupPage=yes
 OutputDir=..\build
-OutputBaseFilename=FreeIME11-11.1.1-setup
+OutputBaseFilename=FreeIME11-11.1.2-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=admin

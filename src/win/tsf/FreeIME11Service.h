@@ -83,7 +83,7 @@ private:
     // 后来覆盖的字段，可能重复上屏、也可能把已经清掉的编码重新写回文档（残留）。
     class EditRequest final : public ITfEditSession {
     public:
-        EditRequest(FreeIME11Service *owner, EditSessionType type, std::string commitUtf8,
+        EditRequest(FreeIME11Service *owner, ITfContext *context, EditSessionType type, std::string commitUtf8,
                     std::string preeditUtf8, std::vector<std::wstring> cands, int cursor, bool hasPrev,
                     bool hasNext, std::string aux, ITfComposition *target = nullptr);
         ~EditRequest();
@@ -107,6 +107,9 @@ private:
         // ES_Clear 专用：发起请求时的组合对象。异步执行时全局状态可能已经变了，
         // 带上引用才能保证一定清掉当初那串编码。
         ITfComposition *target_ = nullptr;
+        // 发起请求时的编辑上下文：异步执行时焦点可能已经换到别的窗口，
+        // 拿着 A 的 cookie 去改 B 的文档会把文字插到别的程序里。
+        ITfContext *context_ = nullptr;
     };
 
     BOOL isComposing() const;
@@ -130,7 +133,7 @@ private:
                         bool hasNext = false, const std::string &aux = std::string());
     void applyEdit(TfEditCookie ec, EditSessionType type, const std::string &commitUtf8,
                    const std::string &preeditUtf8, const std::vector<std::wstring> &cands, int cursor, bool hasPrev,
-                   bool hasNext, const std::string &aux, ITfComposition *target);
+                   bool hasNext, const std::string &aux, ITfComposition *target, ITfContext *context);
     // 清空并结束指定组合（不改变引用计数）；target 为空时用当前 composition_
     void closeComposition(TfEditCookie ec, ITfComposition *target);
     HRESULT commitText(TfEditCookie ec, const std::string &utf8);

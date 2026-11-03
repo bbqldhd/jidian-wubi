@@ -493,11 +493,19 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
             if (tmpPinyin && im.isWubiFamily()) { /* 保留：z 引导临时拼音 */ }
             im.refresh();
 
-            // 自动上屏：2 码唯一 / 满 4 码唯一
+            // 自动上屏：只对「确定的完整编码」生效。
+            // 拼音（含五笔拼音的拼音部分）一律不自动上屏 —— 整句候选常常只有一条，
+            // 若沿用「2 码唯一」，打到 woxihu 就会被截断成「我西湖」，一句话永远打不完。
             if (im.cand_.texts.size() == 1) {
                 const std::string code = im.inputCode_;
-                const size_t minLen = (im.engineIdx == Impl::kWbzx) ? 4 : 2;
-                if (code.size() >= minLen || im.cur()->isExactDictionaryKey(code)) {
+                const bool wubiExact = im.wbzx && im.wbzx->isExactDictionaryKey(code);
+                bool autoCommit = false;
+                if (im.engineIdx == Impl::kWbzx) {
+                    autoCommit = (code.size() >= 4) || wubiExact;   // 五笔：满 4 码唯一 / 简码唯一
+                } else if (im.engineIdx == Impl::kWbpy) {
+                    autoCommit = (code.size() >= 4) && wubiExact;   // 五笔拼音：只认纯五笔编码
+                }                                                    // 拼音 / 英文：不自动上屏
+                if (autoCommit) {
                     out.commitText = im.applyTrad(im.cand_.texts[0]);
                     im.resetSession();
                     out.handled = true; out.state = im.state;
@@ -505,7 +513,14 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
                 }
             }
         } else if (c && isDigit(c)) {
-            // 空闲态的数字不做标点转换，交给应用
+            // 空闲态的数字交给应用；但组字中（例如拼音整句还没出候选）必须吞掉，
+            // 否则「1」会被打进文档，把正在拼的编码打断。
+            // 这里要把当前编码原样回填，否则上层会当成“空结果”把组合区清掉。
+            if (im.inputCode_.empty() && im.state == SessionState::Idle) {
+                return out;
+            }
+            im.fillOutcome(out);
+            out.handled = true;
             return out;
         } else if (c) {
             // 标点：有候选→顶字上屏；无候选→标点转换

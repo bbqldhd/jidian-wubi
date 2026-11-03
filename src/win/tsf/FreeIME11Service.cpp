@@ -46,17 +46,20 @@ bool isShiftVk(int vk) { return vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RS
 
 // ---------------------------------------------------------------- EditRequest
 
-FreeIME11Service::EditRequest::EditRequest(FreeIME11Service *owner, EditSessionType type, std::string commitUtf8,
-                                           std::string preeditUtf8, std::vector<std::wstring> cands, int cursor,
-                                           bool hasPrev, bool hasNext, std::string aux, ITfComposition *target)
+FreeIME11Service::EditRequest::EditRequest(FreeIME11Service *owner, ITfContext *context, EditSessionType type,
+                                           std::string commitUtf8, std::string preeditUtf8,
+                                           std::vector<std::wstring> cands, int cursor, bool hasPrev, bool hasNext,
+                                           std::string aux, ITfComposition *target)
     : owner_(owner), type_(type), commitUtf8_(std::move(commitUtf8)), preeditUtf8_(std::move(preeditUtf8)),
       cands_(std::move(cands)), cursor_(cursor), hasPrev_(hasPrev), hasNext_(hasNext), aux_(std::move(aux)),
-      target_(target) {
+      target_(target), context_(context) {
     if (owner_) owner_->AddRef();
     if (target_) target_->AddRef();
+    if (context_) context_->AddRef();
 }
 
 FreeIME11Service::EditRequest::~EditRequest() {
+    if (context_) context_->Release();
     if (target_) target_->Release();
     if (owner_) owner_->Release();
 }
@@ -82,7 +85,8 @@ STDMETHODIMP_(ULONG) FreeIME11Service::EditRequest::Release() {
 
 STDMETHODIMP FreeIME11Service::EditRequest::DoEditSession(TfEditCookie ec) {
     if (owner_)
-        owner_->applyEdit(ec, type_, commitUtf8_, preeditUtf8_, cands_, cursor_, hasPrev_, hasNext_, aux_, target_);
+        owner_->applyEdit(ec, type_, commitUtf8_, preeditUtf8_, cands_, cursor_, hasPrev_, hasNext_, aux_, target_,
+                          context_);
     return S_OK;
 }
 
@@ -471,8 +475,8 @@ HRESULT FreeIME11Service::requestEdit(EditSessionType type, const std::string &t
     // ES_Clear 需要清掉“发起这一次请求时的”组合：异步执行时 composition_ 可能已经被换掉了
     ITfComposition *target = (type == ES_Clear) ? composition_ : nullptr;
 
-    EditRequest *req = new (std::nothrow) EditRequest(this, type, textUtf8, preeditUtf8, cands, cursor, hasPrev, hasNext,
-                                                     aux, target);
+    EditRequest *req = new (std::nothrow) EditRequest(this, context_, type, textUtf8, preeditUtf8, cands, cursor,
+                                                     hasPrev, hasNext, aux, target);
     if (!req) return E_OUTOFMEMORY;
 
     HRESULT hrSession = E_FAIL;
@@ -483,8 +487,14 @@ HRESULT FreeIME11Service::requestEdit(EditSessionType type, const std::string &t
 
 void FreeIME11Service::applyEdit(TfEditCookie ec, EditSessionType type, const std::string &commitUtf8,
                                  const std::string &preeditUtf8, const std::vector<std::wstring> &cands, int cursor,
-                                 bool hasPrev, bool hasNext, const std::string &aux, ITfComposition *target) {
+                                 bool hasPrev, bool hasNext, const std::string &aux, ITfComposition *target,
+                                 ITfContext *context) {
     if (!context_) return;
+    // 排队期间焦点可能已经换到别的窗口：上屏/改预编辑都带着「当时的插入符位置」语义，
+    // 拿到新窗口里执行会把字插错地方，直接丢弃。清空类请求带的是自己的组合对象，仍然要执行，
+    // 否则原来那串编码会留在旧文档里。
+    if (context != context_ && type != ES_Clear) return;
+    
     switch (type) {
     case ES_Commit:
         commitText(ec, commitUtf8);
@@ -551,7 +561,8 @@ void FreeIME11Service::clearCompositionOn(ITfContext *ctx) {
     composition_ = nullptr;
     compositionStarted_ = false;
 
-    EditRequest *req = new (std::nothrow) EditRequest(this, ES_Clear, "", "", {}, 0, false, false, std::string(), target);
+    EditRequest *req = new (std::nothrow) EditRequest(this, ctx, ES_Clear, "", "", {}, 0, false, false,
+                                                      std::string(), target);
     target->Release(); // 请求对象已持有引用
     if (!req) return;
 

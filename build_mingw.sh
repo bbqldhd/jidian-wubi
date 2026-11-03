@@ -36,6 +36,10 @@ echo "[1b] 编译候选窗自测（显示/命中/悬停/点选）..."
 "$GPP" -std=c++17 -O2 -DUNICODE -D_UNICODE -Isrc/win/tsf tests/candidate_window_test.cpp \
   src/win/tsf/CandidateWindow.cpp -lgdiplus -lgdi32 -luser32 -static -o build/candidate_window_test.exe
 
+echo "[1e] 编译自动上屏边界自测（五笔/五笔拼音/拼音）..."
+"$GPP" $COMMON $UTILS $ENGINE src/session/session.cpp tests/autocommit_test.cpp \
+  -liconv -o build/autocommit_test.exe
+
 echo "[1d] 编译拼音整句自测（长拼音串组句/不破坏原有候选）..."
 "$GPP" $COMMON $UTILS $ENGINE tests/pinyin_sentence_test.cpp \
   -liconv -o build/pinyin_sentence_test.exe
