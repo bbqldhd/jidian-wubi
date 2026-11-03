@@ -233,12 +233,16 @@ void AutoPhrase::appendCandidatesForExactCode(const std::string &code, Candidate
         return;
     }
 
-    const auto dictIt = table_.multiCharLexicon().find(code);
-    if (dictIt != table_.multiCharLexicon().end())
+    std::size_t begin = 0, end = 0;
+    if (table_.codeRange(code, begin, end))
     {
-        for (const std::string &hz : dictIt->second)
+        const auto &recs = table_.records();
+        for (std::size_t i = begin; i < end; ++i)
         {
-            if (hz.empty() || candidatePayloadHasEntry(out, code, hz))
+            const std::string &hz = recs[i].second;
+            // 与原「只看词组表」一致：单字由候选表自己产出，这里不重复追加
+            if (hz.empty() || MbDictionaryTable::utf8CharCount(hz) < 2U ||
+                candidatePayloadHasEntry(out, code, hz))
             {
                 continue;
             }

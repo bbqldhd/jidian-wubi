@@ -106,18 +106,16 @@ void WbzxEngine::initSingleHanziPrimaryCodeFromMbTable()
     /* 仅首字节是字母的编码参与；剔除 /xxx 等特殊键。
      * 对已入选者仅当新编码更长时替换；等长时保留先记录的。 */
     singleHanziPrimaryCode_.clear();
-    for (const auto &kv : mbTable_.singleCharLexicon())
-    {
-        const std::string &code = kv.first;
-        if (code.empty() || !std::isalpha(static_cast<unsigned char>(code[0])))
+    mbTable_.forEachSingleCharText(
+        [this](const std::string &code, const std::string &hz)
         {
-            continue;
-        }
-        for (const std::string &hz : kv.second)
-        {
+            if (code.empty() || !std::isalpha(static_cast<unsigned char>(code[0])))
+            {
+                return;
+            }
             if (MbDictionaryTable::utf8CharCount(hz) != 1U)
             {
-                continue;
+                return;
             }
             const auto it = singleHanziPrimaryCode_.find(hz);
             if (it == singleHanziPrimaryCode_.end())
@@ -128,8 +126,7 @@ void WbzxEngine::initSingleHanziPrimaryCodeFromMbTable()
             {
                 it->second = code;
             }
-        }
-    }
+        });
 }
 
 std::string WbzxEngine::primaryWubiCodeForSingleHanziUtf8(const std::string &hz) const

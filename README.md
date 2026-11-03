@@ -14,7 +14,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.1.2**。
+版本号 **11.2.0**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -23,7 +23,7 @@
 > 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
 
 [![License](https://img.shields.io/badge/license-Mulan%20PSL%20v2-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v11.1.2-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
+[![Release](https://img.shields.io/badge/release-v11.2.0-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
 
 | 平台 | 地址 |
 |---|---|
@@ -44,7 +44,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序
-├── cmake/                   # 版本资源 11.1.2、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.2.0、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -83,9 +83,37 @@ bash build_mingw.sh
 `build/freeime11-settings.exe`、`build/freeime11-uninstall.exe`、
 `build/freeime11-addlang.exe`、`build/session_test.exe`。
 
+### 数据文件（词库不入库）
+
+本仓库**不含词库文件**：`.mb` 是极点/搜狗的词库数据，`.scel` 是搜狗细胞词库，二者的授权都不
+覆盖再分发，因此只在本地构建目录里存在（`.gitignore` 已拦截）。
+
+打安装包需要这两个文件，默认从仓库**同级目录**的 `upstream-freewb` 取：
+
+```
+<工作目录>/
+├── freeime11-win/          # 本仓库
+└── upstream-freewb/
+    └── data/mb/default/
+        ├── wbzx.mb         # 五笔词库
+        └── pinyin.mb       # 拼音词库
+```
+
+`installer/freeime11.iss` 里的路径指向 `..\..\upstream-freewb\...`，换成别处请自行改这两行。
+
+拼音词库可以用 `tools/sogou/` 里的工具从搜狗 `.scel` 词库生成（格式说明与算法见
+`tools/sogou/README.md`）；生成完把结果放到上面指定的位置即可：
+
+```bash
+cd tools/sogou
+python fetch_cells.py 1 2 3 15097 15117 15203        # 抓搜狗官方词库
+python solve_sylmap.py <原 pinyin.mb> ./scel            # 解音节 ID 表
+python merge_final.py <原 pinyin.mb> ./scel pinyin.mb   # 合并出新的 pinyin.mb
+```
+
 ## 安装
 
-1. 运行 `FreeIME11-11.1.2-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+1. 运行 `FreeIME11-11.2.0-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
    写入「添加/删除程序」、创建开始菜单快捷方式）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
@@ -102,6 +130,43 @@ bash build_mingw.sh
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.2.0：拼音词库换成搜狗词库
+
+**词库来源**：搜狗拼音 16.10 安装包里的 16 个官方细胞词库（`.scel`）——成语俗语、唐诗三百首、
+古诗词名句、宋词精选、李白/苏东坡诗集、法律/物理/军事/财经/农业词汇、道教词汇等，
+解析后并入 `pinyin.mb`。
+
+| | 原来 | 现在 |
+|---|---|---|
+| 词条 | 355,454 | **526,475** |
+| 编码数 | — | 325,164 |
+| 文件 | 8.2 MB | 14.3 MB |
+
+新增 171,021 条：4 字成语约 4.6 万、5–7 字诗句约 7.8 万，其余是各专业词库。实测
+`chuangqianmingyueguang` 从「窗签名月光」变成**床前明月光**，`buzhaobianji` 从「不照壁氨基」
+变成**不着边际**；常用词首选（是/我/你/中国/人民/世界/工作/学习/电脑/知道/没有/生活）**全部不变**。
+
+**顺带把词库内存砍了一半**。原来 `MbDictionaryTable` 同时存 `records_`（有序数组）和两张
+`unordered_map<string, vector<string>>`（单字表/词组表），每个词条的编码与文本都要存两份——
+拼音词库涨到 52 万条后，仅这份副本就多占 55 MB。现在统一走 `records_` 二分查找
+（`codeRange()` / `hasCode()`），映射表整个删掉：
+
+| | 改造前 | 改造后 |
+|---|---|---|
+| 旧词库工作集 | 61.6 MB | **31.7 MB** |
+| 新词库工作集 | 100.2 MB | **45.4 MB** |
+| 首次加载（新词库） | 395 ms | **178 ms** |
+| 单次查询 | 15 µs | 18 µs |
+
+也就是说：**词库大了 48%，内存反而比原来少了 26%**。整数二分带来的 3 µs 查询开销对打字无感。
+
+转换工具链在 `tools/sogou/`（`.scel` 格式、音节表解法、合并脚本、README）。
+词条只保留「全为汉字且字数等于音节数」的，正好匹配引擎整句切分的约束；网络新词词库
+（人名/地名/公司名）默认跳过。
+
+> 版权提醒：`.scel` 内容版权归原始贡献者，搜狗只授权在其输入法内使用。合并后的词库
+> 自用没问题，对外分发的授权状态不明确，发布前请自行评估。
 
 ## v11.1.2：修 3 个 bug
 

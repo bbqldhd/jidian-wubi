@@ -133,15 +133,22 @@ bool PyEngine::pickWordForSentence(const std::string &code, std::string &text) c
 
     // 只接受「字数 == 音节数」的词条：词库里的简码/缩写（wo→玩偶、hua→护岸）字数对不上，
     // 会被跳过而不是整串失败，这样才能正常回落到单字表里的「我」。
-    const auto pick = [&](const std::unordered_map<std::string, std::vector<std::string>> &lex) {
-        const auto it = lex.find(code);
-        if (it == lex.end())
+    // 词组优先，其次单字：与原来的「先查词组表再查单字表」等价。
+    const auto pick = [&](bool singleCharOnly) {
+        std::size_t begin = 0, end = 0;
+        if (!mbTable_.codeRange(code, begin, end))
         {
             return false;
         }
-        for (const std::string &candidate : it->second)
+        for (std::size_t i = begin; i < end; ++i)
         {
-            if (static_cast<int>(MbDictionaryTable::utf8CharCount(candidate)) == syllables)
+            const std::string &candidate = mbTable_.records()[i].second;
+            const std::size_t n = MbDictionaryTable::utf8CharCount(candidate);
+            if (singleCharOnly ? (n != 1U) : (n < 2U))
+            {
+                continue;
+            }
+            if (static_cast<int>(n) == syllables)
             {
                 text = candidate;
                 return true;
@@ -150,11 +157,11 @@ bool PyEngine::pickWordForSentence(const std::string &code, std::string &text) c
         return false;
     };
 
-    if (pick(mbTable_.multiCharLexicon()))
+    if (pick(false))
     {
         return true;
     }
-    return pick(mbTable_.singleCharLexicon());
+    return pick(true);
 }
 
 int PyEngine::syllableCount(const std::string &code, bool allowSingleLetter) const
@@ -169,13 +176,12 @@ int PyEngine::syllableCount(const std::string &code, bool allowSingleLetter) con
     const std::size_t n = code.size();
     std::vector<int> best(n + 1U, INT_MAX);
     best[n] = 0;
-    const auto &single = mbTable_.singleCharLexicon();
     for (std::size_t i = n; i-- > 0U;)
     {
         const std::size_t maxLen = std::min(kMaxSyllableLen, n - i);
         for (std::size_t len = allowSingleLetter ? 1U : 2U; len <= maxLen; ++len)
         {
-            if (single.find(code.substr(i, len)) == single.end())
+            if (!mbTable_.hasCode(code.substr(i, len), true))
             {
                 continue;
             }

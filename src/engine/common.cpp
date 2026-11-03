@@ -42,8 +42,6 @@ void MbDictionaryTable::appendCandidatesForPrefix(const std::string &prefix, Can
 
 void MbDictionaryTable::clear()
 {
-    singleChardict_.clear();
-    multiChardict_.clear();
     records_.clear();
     tableName_.clear();
     tableInfo_.clear();
@@ -129,8 +127,7 @@ bool MbDictionaryTable::loadFromStream(std::ifstream &in, const char *linePrefix
         clear();
         return false;
     }
-    singleChardict_.clear();
-    multiChardict_.clear();
+    records_.clear();
     for (uint32_t i = 0; i < recordCount_; ++i)
     {
         uint32_t codeFieldLen = 0;
@@ -185,7 +182,6 @@ bool MbDictionaryTable::loadFromStream(std::ifstream &in, const char *linePrefix
         (void)typ;
         std::string hz(hzBuf.data());
         records_.emplace_back(strCode, hz);
-        rebuildLexiconFromRecord(strCode, hz);
     }
 
     FREEWB_DEBUG("{}tableName={}\ntableInfo={}\ntableCreateTime={}\nstrEndKeys={}\nstrSpecialKeys={}\nstrCodeType={}"
@@ -207,24 +203,19 @@ bool MbDictionaryTable::hasEntry(const std::string &code, const std::string &tex
         return false;
     }
 
-    const auto scan = [&code, &text](const std::unordered_map<std::string, std::vector<std::string>> &dict) -> bool
+    std::size_t begin = 0, end = 0;
+    if (!codeRange(code, begin, end))
     {
-        const auto it = dict.find(code);
-        if (it == dict.end())
-        {
-            return false;
-        }
-        for (const std::string &hz : it->second)
-        {
-            if (hz == text)
-            {
-                return true;
-            }
-        }
         return false;
-    };
-
-    return scan(singleChardict_) || scan(multiChardict_);
+    }
+    for (std::size_t i = begin; i < end; ++i)
+    {
+        if (records_[i].second == text)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool MbDictionaryTable::hasExactCode(const std::string &code) const
@@ -234,24 +225,19 @@ bool MbDictionaryTable::hasExactCode(const std::string &code) const
         return false;
     }
 
-    const auto hasNonEmpty = [&code](const std::unordered_map<std::string, std::vector<std::string>> &dict) -> bool
+    std::size_t begin = 0, end = 0;
+    if (!codeRange(code, begin, end))
     {
-        const auto it = dict.find(code);
-        if (it == dict.end())
-        {
-            return false;
-        }
-        for (const std::string &hz : it->second)
-        {
-            if (!hz.empty())
-            {
-                return true;
-            }
-        }
         return false;
-    };
-
-    return hasNonEmpty(singleChardict_) || hasNonEmpty(multiChardict_);
+    }
+    for (std::size_t i = begin; i < end; ++i)
+    {
+        if (!records_[i].second.empty())
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool MbDictionaryTable::saveToStream(std::ofstream &out) const
@@ -374,7 +360,6 @@ bool MbDictionaryTable::appendSortedRecord(const std::string &code, const std::s
     }
 
     records_.emplace_back(code, text);
-    rebuildLexiconFromRecord(code, text);
     recordCount_ = static_cast<uint32_t>(records_.size());
     return true;
 }
@@ -394,22 +379,48 @@ bool MbDictionaryTable::insertRecord(const std::string &code, const std::string 
         std::lower_bound(records_.begin(), records_.end(), code,
                          [](const std::pair<std::string, std::string> &rec, const std::string &c) { return rec.first < c; });
     records_.insert(it, {code, text});
-    rebuildLexiconFromRecord(code, text);
     recordCount_ = static_cast<uint32_t>(records_.size());
     return true;
 }
 
-void MbDictionaryTable::rebuildLexiconFromRecord(const std::string &code, const std::string &text)
+bool MbDictionaryTable::codeRange(const std::string &code, std::size_t &begin, std::size_t &end) const
 {
-    const size_t nChar = MbDictionaryTable::utf8CharCount(text);
-    if (nChar == 1U)
+    begin = end = 0U;
+    if (code.empty() || records_.empty())
     {
-        singleChardict_[code].push_back(text);
+        return false;
     }
-    else if (nChar >= 2U)
+    const auto lessCode = [](const std::pair<std::string, std::string> &rec, const std::string &key)
+    { return rec.first < key; };
+    const auto it = std::lower_bound(records_.begin(), records_.end(), code, lessCode);
+    if (it == records_.end() || it->first != code)
     {
-        multiChardict_[code].push_back(text);
+        return false;
     }
+    const auto jt = std::upper_bound(it, records_.end(), code,
+                                     [](const std::string &key, const std::pair<std::string, std::string> &rec)
+                                     { return key < rec.first; });
+    begin = static_cast<std::size_t>(it - records_.begin());
+    end = static_cast<std::size_t>(jt - records_.begin());
+    return begin < end;
+}
+
+bool MbDictionaryTable::hasCode(const std::string &code, bool singleCharOnly) const
+{
+    std::size_t begin = 0, end = 0;
+    if (!codeRange(code, begin, end))
+    {
+        return false;
+    }
+    for (std::size_t i = begin; i < end; ++i)
+    {
+        const std::size_t n = MbDictionaryTable::utf8CharCount(records_[i].second);
+        if (singleCharOnly ? (n == 1U) : (n >= 1U))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool MbDictionaryTable::writeNulTerminatedField(std::ofstream &out, const std::string &value) const

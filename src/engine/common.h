@@ -46,16 +46,24 @@ public:
     /** 主码表是否含 code=text 条目（精确匹配）。 */
     bool hasEntry(const std::string &code, const std::string &text) const;
 
-    /** 单字码表（code → 若干 hz）；供五笔引擎构建单字→首选码索引等。 */
-    const std::unordered_map<std::string, std::vector<std::string>> &singleCharLexicon() const
-    {
-        return singleChardict_;
-    }
+    /** 编码在 records_ 中对应的下标区间 [begin, end)（records_ 按编码升序）。
+     * 精确编码查找直接二分，不再另存一张 code→词条 的哈希表 —— 那样每个词条的
+     * 编码与文本都要存两份，拼音词库涨到五十万条时仅这一份副本就要多占几十 MB。 */
+    bool codeRange(const std::string &code, std::size_t &begin, std::size_t &end) const;
 
-    /** 词组码表（code → 若干 hz）；与 singleCharLexicon 对称，供引擎精确编码查找。 */
-    const std::unordered_map<std::string, std::vector<std::string>> &multiCharLexicon() const
+    /** 该编码下是否存在词条；singleCharOnly=true 时只认单字。 */
+    bool hasCode(const std::string &code, bool singleCharOnly) const;
+
+    /** 遍历全部单字词条（供五笔引擎构建「单字 → 主码」索引）。 */
+    template <typename Fn> void forEachSingleCharText(Fn &&fn) const
     {
-        return multiChardict_;
+        for (const auto &rec : records_)
+        {
+            if (MbDictionaryTable::utf8CharCount(rec.second) == 1U)
+            {
+                fn(rec.first, rec.second);
+            }
+        }
     }
 
     const std::vector<EngineRuleBlock> &phraseEncodeRules() const
@@ -131,12 +139,7 @@ private:
     bool writeNulTerminatedField(std::ofstream &out, const std::string &value) const;
     bool writeU32(std::ofstream &out, uint32_t value) const;
     bool writeExact(std::ofstream &out, const void *src, std::streamsize len) const;
-    void rebuildLexiconFromRecord(const std::string &code, const std::string &text);
-
 private:
-    std::unordered_map<std::string, std::vector<std::string>> singleChardict_;
-    std::unordered_map<std::string, std::vector<std::string>> multiChardict_;
-
     std::string tableName_;
     std::string tableInfo_;
     std::string tableCreateTime_;
