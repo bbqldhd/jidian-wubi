@@ -221,6 +221,10 @@ bool Session::chinesePunc() const { return settings::instance().get_chinesePunc(
 bool Session::fullShape() const { return settings::instance().get_fullWidthFlg(); }
 bool Session::simpTrad() const { return settings::instance().get_simpTradFlg(); }
 bool Session::englishMode() const { return impl_->englishMode_; }
+bool Session::hasPendingInput() const {
+    const auto &im = *impl_;
+    return !im.inputCode_.empty() || !im.lead_.empty();
+}
 std::string Session::engineName() const {
     switch (impl_->engineIdx) {
     case Impl::kWbpy: return "wbpy";

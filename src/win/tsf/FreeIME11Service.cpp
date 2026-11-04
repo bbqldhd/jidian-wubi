@@ -255,6 +255,10 @@ void FreeIME11Service::dispatchOutcome(const freeime11::SessionOutcome &out) {
         return;
     }
 
+    // 会话只吞了键、没给出新的编码串（Ctrl 快捷键、在线造词引导等）时，
+    // 只要会话里还有未完成输入，就保持编码框原样 —— 不收起、不关闭、不重置输入状态。
+    if (out.handled && session_->hasPendingInput() && CandidateWindow::instance().hasPreedit()) return;
+
     requestEdit(ES_Clear, "", "", {});
 }
 
@@ -456,10 +460,12 @@ STDMETHODIMP FreeIME11Service::OnCompositionTerminated(TfEditCookie, ITfComposit
         composition_->Release();
         composition_ = nullptr;
         compositionStarted_ = false;
-        // 应用自己结束了组合（点击别处、切文档等）：丢弃会话状态，避免下一键接着旧编码
-        session_->reset();
+        // 编码框里还有未完成内容时不能重置会话，否则用户打到一半的编码会凭空消失。
+        if (!CandidateWindow::instance().hasPreedit()) session_->reset();
     }
-    CandidateWindow::instance().hide();
+    // 同理：还有未完成输入就保持输入框可见，组合被应用单方面终止也不自动收起。
+    // 正常的「输入结束/焦点切换/上屏」路径都会先调用 hide() 清空编码，这里才会收起。
+    if (!CandidateWindow::instance().hasPreedit()) CandidateWindow::instance().hide();
     return S_OK;
 }
 
@@ -531,7 +537,8 @@ void FreeIME11Service::adoptContext(ITfContext *pic) {
         context_ = nullptr;
     }
     compositionUnsupported_ = false;
-    CandidateWindow::instance().hide();
+    // 上下文被重新接管时不要顺手收起编码框：只要还有未完成输入就保持可见、不重置。
+    if (!CandidateWindow::instance().hasPreedit()) CandidateWindow::instance().hide();
 
     if (pic) {
         context_ = pic;
@@ -664,7 +671,8 @@ HRESULT FreeIME11Service::updateComposition(TfEditCookie ec, const std::string &
         return S_OK;
     }
 
-    // 组字：优先在插入符处建立 TSF 组合；不支持组合的应用（终端/部分 Electron）降级为「只出候选窗」
+    // 组字：只在文档里占一个「空」组合，用来锁定插入符位置并与应用的输入状态协作。
+    // 编码串不再写进组合区间（那会显示在原本用于输入文字的位置），改由候选窗顶部的输入框呈现。
     if (!isComposing() && !compositionUnsupported_) {
         ITfRange *range = nullptr;
         if (!selectionRange(ec, &range)) {
@@ -686,34 +694,17 @@ HRESULT FreeIME11Service::updateComposition(TfEditCookie ec, const std::string &
         }
     }
 
-    if (isComposing()) {
-        ITfRange *range = nullptr;
-        if (SUCCEEDED(composition_->GetRange(&range)) && range) {
-            range->SetText(ec, 0, preedit.c_str(), static_cast<LONG>(preedit.size()));
-            // 组合属性标记
-            ITfProperty *prop = nullptr;
-            if (SUCCEEDED(context_->GetProperty(GUID_PROP_COMPOSING, &prop))) {
-                VARIANT var;
-                var.vt = VT_I4;
-                var.lVal = 1;
-                prop->SetValue(ec, range, &var);
-                prop->Release();
-            }
-            range->Release();
-        }
-    }
+    // 组合区间保持为空：既不把 preedit 写进文档，也不给它打「组字中」属性，
+    // 否则上屏后的正文可能残留组合样式。上屏时直接把这个空区间替换成最终文本即可。
 
-    // 候选窗：跟随插入符
-    if (!cands.empty()) {
-        POINT pt{0, 0};
-        if (!caretScreenPos(ec, pt)) {
-            // 兜底：鼠标位置，至少不会跑到左上角
-            GetCursorPos(&pt);
-        }
-        CandidateWindow::instance().show(cands, cursor, hasPrev, hasNext, Utf8ToWide(aux), pt);
-    } else {
-        CandidateWindow::instance().hide();
+    // 候选窗（含顶部编码输入框）：跟随插入符。
+    // 即使这一页一个候选都没有，只要还有未完成的编码就照样显示，不自动收起、不重置会话。
+    POINT pt{0, 0};
+    if (!caretScreenPos(ec, pt)) {
+        // 兜底：鼠标位置，至少不会跑到左上角
+        GetCursorPos(&pt);
     }
+    CandidateWindow::instance().show(cands, cursor, hasPrev, hasNext, Utf8ToWide(aux), pt, preedit);
     return S_OK;
 }
 
@@ -739,7 +730,8 @@ bool FreeIME11Service::caretScreenPos(TfEditCookie ec, POINT &pt) const {
                 view->Release();
             }
             sel.range->Release();
-            if (SUCCEEDED(hr)) {
+            // 空组合时部分应用会返回全零矩形；此时退回 GUI 插入符，别把输入框甩到屏幕左上角
+            if (SUCCEEDED(hr) && !(rc.left == 0 && rc.top == 0 && rc.right == 0 && rc.bottom == 0)) {
                 pt.x = rc.left;
                 pt.y = rc.bottom;
                 return true;

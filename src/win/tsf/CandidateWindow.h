@@ -35,12 +35,19 @@ public:
     // 注册鼠标回调（服务对象销毁前应清空）
     void setHandlers(SelectHandler onSelect, PageHandler onPage);
 
-    // 显示候选；caret 为屏幕坐标（插入符左下方）
+    // 显示候选；caret 为屏幕坐标（插入符左下方）。
+    // preedit 是当前未完成的编码串：会画在窗口顶部的「编码输入框」里，而不是写进文档。
+    // 只要 preedit 非空，即便本页一个候选都没有，窗口也保持可见（不自动收起）。
     void show(const std::vector<std::wstring> &cands, int cursor, bool hasPrev, bool hasNext,
-              const std::wstring &aux, POINT caret);
+              const std::wstring &aux, POINT caret, const std::wstring &preedit = std::wstring());
 
     void hide();
     bool visible() const;
+
+    // 编码输入框当前内容 / 是否还有未完成输入 / 输入框的客户区矩形（测试用）
+    const std::wstring &preedit() const { return preedit_; }
+    bool hasPreedit() const { return !preedit_.empty(); }
+    RECT inputRect() const { return inputRect_; }
 
     // 命中测试（客户区坐标）
     // 返回 >=0 候选下标；kPrevPage/kNextPage 翻页箭头；kNone 空白
@@ -67,6 +74,7 @@ private:
     HWND hwnd_ = nullptr;
     std::vector<std::wstring> cands_;
     std::wstring aux_;
+    std::wstring preedit_;      // 顶部输入框显示的未完成编码串
     int cursor_ = 0;
     bool hasPrev_ = false;
     bool hasNext_ = false;
@@ -75,6 +83,7 @@ private:
 
     // 布局结果（客户区坐标），用于命中测试
     std::vector<RECT> itemRects_;
+    RECT inputRect_{};          // 顶部编码输入框
     RECT prevRect_{};
     RECT nextRect_{};
     bool hasArrows_ = false;

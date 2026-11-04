@@ -94,6 +94,8 @@ bool CandidateWindow::visible() const { return hwnd_ && IsWindowVisible(hwnd_) !
 void CandidateWindow::hide() {
     hover_ = kNone;
     trackingLeave_ = false;
+    // 只有「输入确实结束」才会走到这里；把编码清空，避免窗口重新显示时带着旧内容
+    preedit_.clear();
     if (hwnd_ && IsWindowVisible(hwnd_)) ShowWindow(hwnd_, SW_HIDE);
 }
 
@@ -196,8 +198,11 @@ int CandidateWindow::hitTest(int x, int y) const {
 }
 
 void CandidateWindow::show(const std::vector<std::wstring> &cands, int cursor, bool hasPrev, bool hasNext,
-                           const std::wstring &aux, POINT caret) {
-    if (cands.empty()) {
+                           const std::wstring &aux, POINT caret, const std::wstring &preedit) {
+    preedit_ = preedit;
+    // 未完成输入时（例如这一码暂时查不到候选、或用户只打了一半），即使候选为空也要
+    // 保留顶部输入框；只有「编码已清空且没有候选」才是真正该收起的时刻。
+    if (cands.empty() && preedit_.empty()) {
         hide();
         return;
     }
@@ -237,10 +242,20 @@ void CandidateWindow::render() {
     const int itemPadX = scaleOf(6, s);
     const int radius = scaleOf(6, s);
     const int arrowW = scaleOf(26, s);
+    const int inputH = scaleOf(24, s);   // 顶部编码输入框的行高
+    const int rowGap = scaleOf(7, s);    // 输入框与候选行之间的间距
 
     Bitmap measure(1, 1, PixelFormat32bppARGB);
     Graphics gm(&measure);
     gm.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+
+    // 量一下编码串宽度，决定输入框至少要多宽
+    int codeW = 0;
+    if (!preedit_.empty()) {
+        RectF rCode;
+        gm.MeasureString(preedit_.c_str(), -1, &fontText, PointF(0, 0), &rCode);
+        codeW = static_cast<int>(rCode.Width + 0.5f);
+    }
 
     // 每个候选：序号 + 文本
     struct Cell {
@@ -273,11 +288,16 @@ void CandidateWindow::render() {
         cells.push_back(c);
     }
 
+    const bool hasCands = !cands_.empty();
     const bool paging = hasPrev_ || hasNext_;
     const int arrowsW = paging ? (hasPrev_ ? arrowW : 0) + (hasNext_ ? arrowW : 0) : 0;
 
-    const int width = pad * 2 + contentW + arrowsW;
-    const int height = pad * 2 + lineH;
+    // 顶部输入框至少要有这么宽；候选行更宽时以候选行为准。
+    // 没有候选时仍要画出输入框，因此高度里始终包含 inputH。
+    const int inputNeed = pad * 2 + codeW + scaleOf(30, s);
+    const int candNeed = pad * 2 + contentW + arrowsW;
+    const int width = std::max(candNeed, inputNeed);
+    const int height = pad * 2 + inputH + (hasCands ? rowGap + lineH : 0);
 
     // 限制不超过屏幕宽度
     POINT pt = caret_;
@@ -303,13 +323,17 @@ void CandidateWindow::render() {
     width_ = w;
     height_ = height;
 
-    // 布局结果（客户区坐标）：命中测试与绘制共用
+    // 布局结果（客户区坐标）：命中测试与绘制共用。
+    // 顶部输入框占满内宽，候选行排在它下面。
+    inputRect_ = RECT{pad, pad, w - pad, pad + inputH};
+    const int rowY = pad + inputH + rowGap;
+
     itemRects_.clear();
     itemRects_.reserve(cells.size());
     {
         int cx = pad;
         for (size_t i = 0; i < cells.size(); ++i) {
-            RECT r{cx, pad, cx + cells[i].w, pad + lineH};
+            RECT r{cx, rowY, cx + cells[i].w, rowY + lineH};
             itemRects_.push_back(r);
             cx += cells[i].w;
             if (i + 1 < cells.size()) cx += gap;
@@ -317,14 +341,14 @@ void CandidateWindow::render() {
     }
     prevRect_ = RECT{0, 0, 0, 0};
     nextRect_ = RECT{0, 0, 0, 0};
-    hasArrows_ = paging;
-    if (paging) {
+    hasArrows_ = paging && hasCands;
+    if (hasArrows_) {
         int ax = w - pad - arrowsW;
         if (hasPrev_) {
-            prevRect_ = RECT{ax, pad, ax + arrowW, pad + lineH};
+            prevRect_ = RECT{ax, rowY, ax + arrowW, rowY + lineH};
             ax += arrowW;
         }
-        if (hasNext_) nextRect_ = RECT{ax, pad, ax + arrowW, pad + lineH};
+        if (hasNext_) nextRect_ = RECT{ax, rowY, ax + arrowW, rowY + lineH};
     }
 
     // 用 DIB Section 直接绘制，保证 32bpp alpha 不被 GDI+ 转换丢失
@@ -396,6 +420,35 @@ void CandidateWindow::render() {
             p.AddArc(rr.X, rr.GetBottom() - d, (REAL)d, (REAL)d, 90, 90);
             p.CloseFigure();
         };
+
+        // 顶部「编码输入框」：未完成的外码显示在这里，文档里保持空白。
+        // 沿用候选窗自身的视觉语言（白底圆角、细边框、蓝色强调），不套用参考样式。
+        {
+            GraphicsPath ip;
+            roundRect(ip, inputRect_, scaleOf(4, s));
+            SolidBrush ib(Color(255, 247, 250, 253));
+            g.FillPath(&ib, &ip);
+            Pen ipPen(Color(255, 213, 217, 222), 1.0f);
+            g.DrawPath(&ipPen, &ip);
+        }
+        if (!preedit_.empty()) {
+            StringFormat sf;
+            sf.SetAlignment(StringAlignmentNear);
+            sf.SetLineAlignment(StringAlignmentCenter);
+            SolidBrush codeBrush(Color(255, 14, 60, 140));
+            RectF rCode(static_cast<REAL>(inputRect_.left + itemPadX), static_cast<REAL>(inputRect_.top),
+                        static_cast<REAL>(codeW + scaleOf(2, s)), static_cast<REAL>(inputH));
+            g.DrawString(preedit_.c_str(), -1, &fontText, rCode, &sf, &codeBrush);
+        }
+        {
+            // 插入符紧跟在编码之后，提示「还在输入、尚未完成」
+            const int cx = inputRect_.left + itemPadX + codeW + scaleOf(2, s);
+            SolidBrush caretBrush(Color(255, 43, 108, 246));
+            g.FillRectangle(&caretBrush,
+                            RectF(static_cast<REAL>(cx), static_cast<REAL>(inputRect_.top + scaleOf(5, s)),
+                                  static_cast<REAL>(std::max(1, scaleOf(2, s))),
+                                  static_cast<REAL>(inputH - scaleOf(10, s))));
+        }
 
         // 候选
         for (size_t i = 0; i < cells.size(); ++i) {

@@ -59,6 +59,8 @@ public:
     bool fullShape() const;
     bool simpTrad() const;   // true=简入繁出
     bool englishMode() const; // true=英文态（工具栏中/英按钮用）
+    // 是否还有未完成的编码（供前端判断编码输入框是否该保持可见）
+    bool hasPendingInput() const;
     // 引擎名与状态
     std::string engineName() const; // "wbzx" | "wbpy" | "py" | "en"
 
