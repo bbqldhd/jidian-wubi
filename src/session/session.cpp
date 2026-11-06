@@ -332,6 +332,27 @@ void Session::cycleMode() {
 }
 
 char vkToCodeChar(int vk, bool shift) {
+    /* Windows 送来的是 VK_OEM_* 这类虚拟键码，不是 ASCII：
+       VK_OEM_PERIOD 是 0xBE，而 '.' 是 0x2E，两者不相等。
+       这里必须先归一化成 ASCII，否则所有符号键都会被当成“不可编码”返回 0，
+       中文标点就整个失效（v11.2.3 修的就是这个）。 */
+#ifdef VK_OEM_1
+    switch (vk) {
+    case VK_OEM_1:      vk = ';';  break;   // ; :
+    case VK_OEM_PLUS:   vk = '=';  break;   // = +
+    case VK_OEM_COMMA:  vk = ',';  break;   // , <
+    case VK_OEM_MINUS:  vk = '-';  break;   // - _
+    case VK_OEM_PERIOD: vk = '.';  break;   // . >
+    case VK_OEM_2:      vk = '/';  break;   // / ?
+    case VK_OEM_3:      vk = '`';  break;   // ` ~
+    case VK_OEM_4:      vk = '[';  break;   // [ {
+    case VK_OEM_5:      vk = '\\'; break;   // \ |
+    case VK_OEM_6:      vk = ']';  break;   // ] }
+    case VK_OEM_7:      vk = '\''; break;   // ' "
+    default: break;
+    }
+#endif
+
     if (vk >= 'A' && vk <= 'Z') return static_cast<char>(vk - 'A' + 'a');
     if (vk >= '0' && vk <= '9') {
         if (!shift) return static_cast<char>(vk);
@@ -669,8 +690,15 @@ bool Session::wantsKey(int vk, bool shift, bool ctrl, bool alt) const {
     // 空闲：只有小写字母起编码；Shift+字母留给应用（大写输入/快捷键）
     if (vk >= 'A' && vk <= 'Z') return !shift;
 
-    // 空闲：数字不归输入法（全角模式例外，全角数字要自己上屏）
-    if (vk >= '0' && vk <= '9') return fullShape();
+    // 空闲：数字本身不归输入法（全角模式例外，那时要自己输出全角数字）。
+    // 但 Shift+数字是符号（! @ # $ % ^ & * ( )），必须按标点规则判断——
+    // 这里以前一律 return fullShape()，拦键判断说「不归我」，processKey 却会把
+    // Shift+1 转成「！」，两边打架的结果就是 Shift 打出来全是半角符号。
+    if (vk >= '0' && vk <= '9') {
+        if (!shift) return fullShape();
+        const char c = vkToCodeChar(vk, true);
+        return c && needsPuncConversion(c, chinesePunc(), fullShape());
+    }
 
     // 空闲：中文标点 / 全角转换。只有真的会变成别的字符时才接管，
     // 否则（例如 # % * ` 或两个开关都关）按键原样交给应用。

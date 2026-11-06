@@ -12,7 +12,7 @@
 # 目标：Windows 10 1809+ / Windows 11 26H2；架构 x64 / ARM64。
 cmake_minimum_required(VERSION 3.20)
 
-project(FreeIME11 VERSION 11.2.2 LANGUAGES C CXX)
+project(FreeIME11 VERSION 11.2.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -114,6 +114,10 @@ if(FREEWB_BUILD_TESTS)
     add_executable(pinyin_fuzzy_test tests/pinyin_fuzzy_test.cpp)
     target_link_libraries(pinyin_fuzzy_test PRIVATE freeime11_engine freeime11_utils)
     add_test(NAME pinyin_fuzzy_test COMMAND pinyin_fuzzy_test)
+
+    add_executable(keygate_test tests/keygate_test.cpp)
+    target_link_libraries(keygate_test PRIVATE freeime11_session)
+    add_test(NAME keygate_test COMMAND keygate_test)
 endif()
 
 install(TARGETS freeime11_utils freeime11_engine freeime11_session ARCHIVE DESTINATION lib)

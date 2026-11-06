@@ -14,7 +14,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.2.2**。
+版本号 **11.2.3**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -23,7 +23,7 @@
 > 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
 
 [![License](https://img.shields.io/badge/license-Mulan%20PSL%20v2-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v11.2.2-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
+[![Release](https://img.shields.io/badge/release-v11.2.3-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
 
 | 平台 | 地址 |
 |---|---|
@@ -44,7 +44,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序
-├── cmake/                   # 版本资源 11.2.2、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.2.3、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -103,7 +103,7 @@ bash build_mingw.sh
 
 ## 安装
 
-1. 运行 `FreeIME11-11.2.2-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+1. 运行 `FreeIME11-11.2.3-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
    写入「添加/删除程序」、创建开始菜单快捷方式）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
@@ -120,6 +120,23 @@ bash build_mingw.sh
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.2.3：修 Shift 打不出中文标点
+
+**现象**：Shift+1 打出来是半角 `!`，不是 `！`；Shift+4 / 6 / 7 / 9 / 0 一起失灵
+（`￥` `…` `—` `（` `）` 全都出不来）。
+
+**原因**：输入法有两道关——`wantsKey()` 决定这个键归不归输入法管，`processKey()` 决定归它以后
+输出什么。v11.2.2 里 `wantsKey()` 的数字分支写成了「数字一律不接管（全角除外）」，
+把 Shift+数字也一起放行了；可 `processKey()` 明明会把 Shift+1 转成「！」。
+两道关的判断对不上，按键在门口就被交给应用，后面那套标点转换永远轮不到执行。
+
+**修复**：数字键按 Shift 分开判断——不按 Shift 保持原样（数字归应用，全角模式自己上屏全角数字），
+按了 Shift 就按标点表判断该不该接管。`#` `%` `*` 这种映射成自己的键仍然原样交给应用。
+
+**验证**：新增 `tests/keygate_test.cpp`，把 `wantsKey()` 与 `processKey()` 逐键对照——
+数字 × Shift、全部 OEM 符号 × Shift、字母 × Shift，要求两边结论一致；
+八个自测全部通过。字母、空格、方向键、Ctrl/Alt 组合的行为没有任何变化。
 
 ## v11.2.2：拼音智能纠错、四模式轮换、中文标点
 

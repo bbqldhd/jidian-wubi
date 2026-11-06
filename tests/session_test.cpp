@@ -31,6 +31,15 @@ int main() {
     assert(vkToCodeChar(';', true) == ':');
     assert(vkToCodeChar(0x0D, false) == 0); // 回车非可编码字符
 
+    // 系统实际发的是 VK_OEM_*，不是 ASCII：这一步归一化错了，标点就全废
+    assert(vkToCodeChar(0xBE /*VK_OEM_PERIOD*/, false) == '.');
+    assert(vkToCodeChar(0xBE, true) == '>');
+    assert(vkToCodeChar(0xBC /*VK_OEM_COMMA*/, false) == ',');
+    assert(vkToCodeChar(0xBA /*VK_OEM_1*/, true) == ':');
+    assert(vkToCodeChar(0xDE /*VK_OEM_7*/, false) == '\'');
+    assert(vkToCodeChar(0xBD /*VK_OEM_MINUS*/, true) == '_');
+    assert(vkToCodeChar(0xDB /*VK_OEM_4*/, true) == '{');
+
     // 2) 会话构造与基础按键流程
     Session s;
     SessionOutcome o;
@@ -45,7 +54,7 @@ int main() {
     assert(o.handled);
 
     // 标点：中文标点态下 '.' 上屏全角句号；关掉中文标点则整键放行给应用
-    o = s.processKey('.', false, false, false);
+    o = s.processKey(0xBE /*VK_OEM_PERIOD*/, false, false, false);
     if (s.chinesePunc()) {
         assert(o.handled);
         assert(o.commitText == "。");
