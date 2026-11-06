@@ -10,7 +10,7 @@
 
 // FreeIME 11 —— 输入法状态工具栏
 //
-// 一条可拖动的小横条，显示并切换 中/英、全/半、标点、简繁、输入方案，
+// 一条可拖动的小横条，显示并切换 键盘模式、全/半、标点、简繁，
 // 另有「设置」与「收起」。与候选窗同源：GDI+ 分层窗口、不抢焦点。
 #pragma once
 
@@ -21,11 +21,10 @@
 
 // 工具栏按钮（顺序即显示顺序）
 enum class ToolbarAction {
-    English = 0,   // 中 / 英
+    Mode = 0,      // 五笔拼音 / 五笔 / 拼音 / 英文（点一下按四模式循环切下一档）
     FullShape,     // 半 / 全
     ChinesePunc,   // ，。 / ,.
     SimpTrad,      // 简 / 繁
-    Engine,        // 五笔 / 五拼 / 拼音 / 英文
     Settings,      // 打开设置程序
     Close,         // 收起工具栏（本次激活内有效）
     Count
@@ -33,11 +32,10 @@ enum class ToolbarAction {
 
 // 工具栏显示所需的会话状态快照
 struct ToolbarState {
-    bool english = false;    // 英文态
     bool fullShape = false;  // 全角
     bool chinesePunc = true; // 中文标点
     bool simpTrad = false;   // 简入繁出
-    std::string engine = "wbzx";
+    std::string engine = "wbpy";
 };
 
 class ToolbarWindow {

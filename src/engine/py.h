@@ -53,6 +53,11 @@ private:
     std::vector<std::string> composeSentences(const std::string &code) const;
     /** 把整句候选并入 result_：有完整匹配时排在末尾，否则排在最前。 */
     void appendSentenceCandidates(const std::string &prefix);
+    /** 智能纠错：把用户可能漏打/多打的 h、g 纠回来（z/zh、c/ch、s/sh、an/ang、en/eng、in/ing）。
+     *  只在「整串没有命中任何词条」时才启用，正确输入不受影响。 */
+    void appendFuzzyCandidates(const std::string &prefix);
+    /** 生成模糊音变体：每个位置只改一处，先补字母（短→长）再删字母（长→短）。 */
+    std::vector<std::string> fuzzyVariants(const std::string &code) const;
     /** 一个编码最少能切成几个音节（无法完全切分返回 -1）。用于剔除词库里的简码/缩写码。 */
     int syllableCount(const std::string &code, bool allowSingleLetter = true) const;
     /** 为整句切分挑一个词：优先词组表，字数必须等于编码的音节数。 */

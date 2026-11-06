@@ -9,8 +9,11 @@
 // See the Mulan PSL v2 for more details.
 
 // FreeIME 11 —— 会话层冒烟测试（跨平台，无 TSF 依赖）
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
+#include <string>
+#include <vector>
 
 #include "../src/session/session.h"
 
@@ -41,10 +44,15 @@ int main() {
     o = s.processKey(0x08 /*VK_BACK*/, false, false, false);
     assert(o.handled);
 
-    // 标点（中文标点态）：'。' 应为全角
+    // 标点：中文标点态下 '.' 上屏全角句号；关掉中文标点则整键放行给应用
     o = s.processKey('.', false, false, false);
-    // 无候选时上屏中文句号
-    assert(!o.commitText.empty());
+    if (s.chinesePunc()) {
+        assert(o.handled);
+        assert(o.commitText == "。");
+    } else {
+        assert(!o.handled);
+        assert(o.commitText.empty());
+    }
 
     // 空闲态：回车/空格/退格/Esc 必须放行给应用，不能被输入法吃掉
     assert(!s.wantsKey(0x0D /*VK_RETURN*/, false, false, false));
@@ -54,8 +62,8 @@ int main() {
     o = s.processKey(0x0D /*VK_RETURN*/, false, false, false);
     assert(!o.handled);
 
-    // 空闲态：数字不归输入法
-    assert(!s.wantsKey('1', false, false, false));
+    // 空闲态：数字不归输入法（全角模式例外，那时要自己输出全角数字）
+    assert(s.wantsKey('1', false, false, false) == s.fullShape());
 
     // 系统快捷键一律放行（否则 Ctrl+空格 切不了输入法）
     assert(!s.wantsKey(0x20 /*0x20*/, false, true, false));
@@ -66,13 +74,36 @@ int main() {
     assert(s.wantsKey('R', false, false, false));
     assert(!s.wantsKey('R', true, false, false));
 
-    // 3) 中英文切换（右 Shift；TSF 前端另有“Shift 单击”判定，这里守会话状态机）
-    o = s.processKey(0xA1 /*VK_RSHIFT*/, true, false, false);
-    assert(o.handled);
-    assert(s.englishMode());   // 工具栏的 中/英 按钮读这个状态
+    // 3) 左右 Shift 单击轮换四个键盘模式：五笔拼音 → 五笔 → 拼音 → 英文 → 五笔拼音
+    //    （TSF 前端另有「按下不切、松开才切」的判定，这里守会话状态机）
+    const std::string originalMode = s.engineName();
+    {
+        std::vector<std::string> seen;
+        for (int i = 0; i < 4; ++i) {
+            const int shiftVk = (i % 2 == 0) ? 0xA1 /*VK_RSHIFT*/ : 0xA0 /*VK_LSHIFT*/;
+            o = s.processKey(shiftVk, true, false, false);
+            assert(o.handled);
+            seen.push_back(s.engineName());
+        }
+        assert(seen.back() == originalMode);                          // 四步一圈回到原点
+        assert(std::count(seen.begin(), seen.end(), "en") == 1);      // 英文只出现一档
+        assert(std::count(seen.begin(), seen.end(), "wbpy") >= 1);    // 五笔拼音在链上
+    }
 
-    // 英文态：整键放行，不吞键
-    assert(!s.wantsKey('R', false, false, false));
+    // 英文档：整键放行，不吞键；再切一下回到五笔拼音
+    {
+        Session e;
+        for (int i = 0; i < 4 && e.engineName() != "en"; ++i) e.cycleMode();
+        assert(e.engineName() == "en");
+        assert(e.englishMode());
+        assert(!e.wantsKey('R', false, false, false));
+        const SessionOutcome r = e.processKey('R', false, false, false);
+        assert(!r.handled);
+
+        e.cycleMode();
+        assert(e.engineName() == "wbpy");
+        assert(!e.englishMode());
+    }
 
     // 4) 选词上屏后会话必须彻底复位：编码/preedit 一律清空，下一键重新起编码
     //    （TSF 侧另有“组合文本必须手动删除”的修复，这里守住状态机这一半）

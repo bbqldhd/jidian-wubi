@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstring>
 #include <fstream>
+#include <utility>
 #include <vector>
 
 #include "log.h"
@@ -26,6 +28,41 @@ constexpr std::size_t kMaxSentenceVariants = 3;
 // 打分：每多切一段 -1。整串的音节总数是固定的，所以「段数最少」等价于「尽量用长词」；
 // 同分时取更长的切法（见 DP 里的 >= 比较）。
 constexpr int kSegmentPenalty = 1;
+
+/* 模糊音：长式 / 短式。两组字母最容易被打错，也最容易靠规则救回来：
+   zhi/zi、chi/ci、shi/si、an/ang、en/eng、in/ing。 */
+struct FuzzyPair
+{
+    const char *longForm;
+    const char *shortForm;
+};
+
+const FuzzyPair kFuzzyPairs[] = {
+    {"zh", "z"}, {"ch", "c"}, {"sh", "s"}, {"ang", "an"}, {"eng", "en"}, {"ing", "in"},
+};
+// 变体数量上限：每个变体都要查一次词库 + 跑一次整句 DP，必须封顶
+constexpr std::size_t kMaxFuzzyVariants = 16;
+// 超长输入不做纠错：这时按前缀匹配更符合预期
+constexpr std::size_t kMaxFuzzyInputLen = 32;
+
+/* pos 处是不是一段真正的短式。zh 里的 z 不算：那已经是长式的一部分，
+   再补一个 h 会得到 zhh。判断办法就是看紧随其后的字母能不能把它补成长式。 */
+bool isShortFormAt(const std::string &code, std::size_t pos, const FuzzyPair &pair)
+{
+    const std::size_t shortLen = std::strlen(pair.shortForm);
+    if (pos + shortLen > code.size() || code.compare(pos, shortLen, pair.shortForm) != 0)
+    {
+        return false;
+    }
+    const char tail = pair.longForm[shortLen];
+    return code.compare(pos + shortLen, 1, std::string(1, tail)) != 0;
+}
+
+bool isLongFormAt(const std::string &code, std::size_t pos, const FuzzyPair &pair)
+{
+    const std::size_t longLen = std::strlen(pair.longForm);
+    return pos + longLen <= code.size() && code.compare(pos, longLen, pair.longForm) == 0;
+}
 
 } // namespace
 
@@ -113,8 +150,164 @@ void PyEngine::putKey(const char *strCode)
     mbTable_.appendCandidatesForPrefix(prefix, result_);
     // 词库里没有这一整串时，按音节切成词再拼成整句（原来这种情况直接 0 候选）
     appendSentenceCandidates(prefix);
+    // 打错一个字母时把正确的词/句捞回来（对正确输入零影响，见函数内的提前返回）
+    appendFuzzyCandidates(prefix);
     freqOrder_.applyToCandidates(result_, prefix);
     fillCandidatePayloadPrompts(prefix, result_);
+}
+
+std::vector<std::string> PyEngine::fuzzyVariants(const std::string &code) const
+{
+    std::vector<std::string> out;
+    if (code.size() < 2U || code.size() > kMaxFuzzyInputLen)
+    {
+        return out;
+    }
+
+    const auto push = [&](std::string variant) {
+        if (variant == code || out.size() >= kMaxFuzzyVariants)
+        {
+            return;
+        }
+        if (std::find(out.begin(), out.end(), variant) != out.end())
+        {
+            return;
+        }
+        out.push_back(std::move(variant));
+    };
+
+    for (const FuzzyPair &pair : kFuzzyPairs)
+    {
+        const std::size_t shortLen = std::strlen(pair.shortForm);
+        const std::size_t longLen = std::strlen(pair.longForm);
+
+        // 少打一个字母：zongguo → zhongguo，最典型的错法，优先尝试
+        for (std::size_t i = 0; i + shortLen <= code.size(); ++i)
+        {
+            if (!isShortFormAt(code, i, pair))
+            {
+                continue;
+            }
+            std::string variant = code;
+            variant.replace(i, shortLen, pair.longForm, longLen);
+            push(std::move(variant));
+        }
+        // 多打一个字母：zhongguo → zongguo
+        for (std::size_t i = 0; i + longLen <= code.size(); ++i)
+        {
+            if (!isLongFormAt(code, i, pair))
+            {
+                continue;
+            }
+            std::string variant = code;
+            variant.replace(i, longLen, pair.shortForm, shortLen);
+            push(std::move(variant));
+        }
+    }
+    return out;
+}
+
+void PyEngine::appendFuzzyCandidates(const std::string &prefix)
+{
+    if (!settings::instance().get_pinyinFuzzy())
+    {
+        return;
+    }
+
+    /* 整串在词库里就有词条，说明用户打的就是对的：纠错一律不插手，避免候选里混进噪声。
+       注意不能用 result_ 里的 fullCodes 判断 —— 整句候选的 fullCode 也是用户输入串，
+       拿它判断会把「词库没这个词、只是被切成了句子」误当成命中。 */
+    if (mbTable_.hasExactCode(prefix))
+    {
+        return;
+    }
+
+    const std::vector<std::string> variants = fuzzyVariants(prefix);
+    if (variants.empty())
+    {
+        return;
+    }
+
+    std::vector<std::string> headTexts, headCodes;   // 变体能整串命中的词：最可能是用户真正想打的
+    std::vector<std::string> tailTexts, tailCodes;   // 变体的前缀匹配与整句：往后排
+    // 整句 DP 比查词贵得多，只给前几个变体留预算，别让每次按键都跑十几遍
+    int sentenceBudget = 4;
+
+    const auto seen = [&](const std::string &text) {
+        if (std::find(result_.texts.begin(), result_.texts.end(), text) != result_.texts.end())
+        {
+            return true;
+        }
+        return std::find(headTexts.begin(), headTexts.end(), text) != headTexts.end() ||
+               std::find(tailTexts.begin(), tailTexts.end(), text) != tailTexts.end();
+    };
+
+    for (const std::string &variant : variants)
+    {
+        CandidatePayload rows;
+        mbTable_.appendCandidatesForPrefix(variant, rows);
+        for (std::size_t i = 0; i < rows.texts.size() && i < rows.fullCodes.size(); ++i)
+        {
+            if (rows.texts[i].empty() || seen(rows.texts[i]))
+            {
+                continue;
+            }
+            if (rows.fullCodes[i] == variant)
+            {
+                // 顶到最前面的只能是一小撮「整串命中」的词，多了会把正常候选挤到第二页
+                if (headTexts.size() < 16U)
+                {
+                    headTexts.push_back(rows.texts[i]);
+                    headCodes.push_back(prefix);
+                }
+            }
+            else
+            {
+                tailTexts.push_back(rows.texts[i]);
+                tailCodes.push_back(prefix);
+            }
+        }
+
+        // 只有完整词也救不回来时才让整句兜底：多字长串里错一个音节，整句是唯一出路
+        if (sentenceBudget > 0 && headTexts.empty())
+        {
+            --sentenceBudget;
+            for (const std::string &sentence : composeSentences(variant))
+            {
+                if (sentence.empty() || seen(sentence))
+                {
+                    continue;
+                }
+                tailTexts.push_back(sentence);
+                tailCodes.push_back(prefix);
+            }
+        }
+    }
+
+    if (headTexts.empty() && tailTexts.empty())
+    {
+        return;
+    }
+
+    const std::size_t limit = MbDictionaryTable::maxCandidatesPerQuery();
+    if (!headTexts.empty())
+    {
+        result_.texts.insert(result_.texts.begin(), headTexts.begin(), headTexts.end());
+        result_.fullCodes.insert(result_.fullCodes.begin(), headCodes.begin(), headCodes.end());
+    }
+    for (std::size_t i = 0; i < tailTexts.size() && result_.texts.size() < limit; ++i)
+    {
+        result_.texts.push_back(tailTexts[i]);
+        result_.fullCodes.push_back(tailCodes[i]);
+    }
+    if (result_.texts.size() > limit)
+    {
+        result_.texts.resize(limit);
+    }
+    if (result_.fullCodes.size() > limit)
+    {
+        result_.fullCodes.resize(limit);
+    }
 }
 
 bool PyEngine::pickWordForSentence(const std::string &code, std::string &text) const

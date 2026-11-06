@@ -48,6 +48,14 @@ echo "[1c] 编译工具栏自测（显示/不抢焦点/命中/点击/位置）..
 "$GPP" -std=c++17 -O2 -DUNICODE -D_UNICODE -Isrc/win/tsf tests/toolbar_window_test.cpp \
   src/win/tsf/ToolbarWindow.cpp -lgdiplus -lgdi32 -luser32 -ladvapi32 -static -o build/toolbar_window_test.exe
 
+echo "[1f] 编译中文标点自测（映射/引号配对/全角/顶字上屏）..."
+"$GPP" $COMMON $UTILS $ENGINE src/session/session.cpp tests/punc_test.cpp \
+  -liconv -o build/punc_test.exe
+
+echo "[1g] 编译拼音智能纠错自测（模糊音 z/zh、an/ang 等）..."
+"$GPP" $COMMON $UTILS $ENGINE tests/pinyin_fuzzy_test.cpp \
+  -liconv -o build/pinyin_fuzzy_test.exe
+
 echo "[2/5] 编译版本资源..."
 "$WINDRES" -O coff --preprocessor="gcc -E -xc-header -DRC_INVOKED" installer/version.rc -o build/version.o
 

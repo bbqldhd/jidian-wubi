@@ -278,7 +278,6 @@ void FreeIME11Service::onCandidatePage(int delta) {
 
 void FreeIME11Service::syncToolbar() {
     ToolbarState st;
-    st.english = session_->englishMode();
     st.fullShape = session_->fullShape();
     st.chinesePunc = session_->chinesePunc();
     st.simpTrad = session_->simpTrad();
@@ -286,8 +285,8 @@ void FreeIME11Service::syncToolbar() {
     ToolbarWindow::instance().setState(st);
 }
 
-void FreeIME11Service::toggleEnglishFromShortcut() {
-    session_->toggleEnglish();
+void FreeIME11Service::cycleModeFromShortcut() {
+    session_->cycleMode();
     // 组字中切走：会话已复位，文档里的编码串要一并清掉
     if (composition_) {
         CandidateWindow::instance().hide();
@@ -298,8 +297,8 @@ void FreeIME11Service::toggleEnglishFromShortcut() {
 
 void FreeIME11Service::onToolbarAction(ToolbarAction action) {
     switch (action) {
-    case ToolbarAction::English:
-        session_->toggleEnglish();
+    case ToolbarAction::Mode:
+        session_->cycleMode();
         if (composition_) {
             CandidateWindow::instance().hide();
             requestEdit(ES_Clear, "", "", {});
@@ -314,9 +313,6 @@ void FreeIME11Service::onToolbarAction(ToolbarAction action) {
     case ToolbarAction::SimpTrad:
         session_->toggleSimpTrad();
         break;
-    case ToolbarAction::Engine:
-        session_->cycleEngine();
-        break;
     case ToolbarAction::Settings:
         launchSettings();
         return;
@@ -329,8 +325,8 @@ void FreeIME11Service::onToolbarAction(ToolbarAction action) {
         return;
     }
 
-    // 中英/方案切换会重置会话：正在组字时把留在文档里的编码串清掉
-    if (action == ToolbarAction::English || action == ToolbarAction::Engine) {
+    // 模式切换会重置会话：正在组字时把留在文档里的编码串清掉
+    if (action == ToolbarAction::Mode) {
         if (composition_) {
             CandidateWindow::instance().hide();
             requestEdit(ES_Clear, "", "", {});
@@ -362,10 +358,10 @@ STDMETHODIMP FreeIME11Service::OnKeyUp(ITfContext *, WPARAM wParam, LPARAM, BOOL
     if (!isShiftVk(vk)) return S_OK;
 
     *pfEaten = TRUE;
-    // 只有“按下后没碰过任何其它键”的 Shift 才算一次中英切换
+    // 只有“按下后没碰过任何其它键”的 Shift 才算一次模式切换（左右 Shift 都算）
     const bool tap = shiftTapPending_ && !isCtrlDown() && !isAltDown();
     shiftTapPending_ = false;
-    if (tap) toggleEnglishFromShortcut();
+    if (tap) cycleModeFromShortcut();
     return S_OK;
 }
 
