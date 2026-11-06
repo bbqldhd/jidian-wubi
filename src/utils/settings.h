@@ -76,6 +76,7 @@ enum class ValueType
     X(CoustomMark, Misc, String, kDefaultCoustomMark, Misc, "")                                                                  \
     X(wubiTable, Misc, String, "default/wbzx.mb", Misc, "")                                                                      \
     X(pinyinTable, Misc, String, "default/pinyin.mb", Misc, "")                                                                  \
+    X(pinyinFuzzy, Common, Bool, "true", Common, "Pinyin fuzzy correction: z/zh, c/ch, s/sh, an/ang, en/eng, in/ing")            \
     X(candiWinDispMode, CandidateWinUi, Int, "0", CandidateWinUi, "")                                                            \
     X(candiCharCount, CandidateWinUi, Int, "9", CandidateWinUi, "")                                                              \
     X(candiWordCount, CandidateWinUi, Int, "5", CandidateWinUi, "")                                                              \

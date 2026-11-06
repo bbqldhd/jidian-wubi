@@ -45,11 +45,10 @@ bool ptInRect(const RECT &r, int x, int y) { return x >= r.left && x < r.right &
 
 // 每个按钮可能出现的最宽文案（用于固定宽度，避免切换时整条工具栏跳动）
 const wchar_t *kLabelSets[static_cast<int>(ToolbarAction::Count)][4] = {
-    {L"中", L"英", nullptr, nullptr},
+    {L"五笔", L"五拼", L"拼音", L"英文"},
     {L"半", L"全", nullptr, nullptr},
     {L"，。", L",.", nullptr, nullptr},
     {L"简", L"繁", nullptr, nullptr},
-    {L"五笔", L"五拼", L"拼音", L"英文"},
     {L"设置", nullptr, nullptr, nullptr},
     {L"×", nullptr, nullptr, nullptr},
 };
@@ -69,15 +68,15 @@ void ToolbarWindow::setHandler(ActionHandler handler) { handler_ = std::move(han
 
 std::wstring ToolbarWindow::labelOf(int index) const {
     switch (static_cast<ToolbarAction>(index)) {
-    case ToolbarAction::English: return state_.english ? L"英" : L"中";
-    case ToolbarAction::FullShape: return state_.fullShape ? L"全" : L"半";
-    case ToolbarAction::ChinesePunc: return state_.chinesePunc ? L"，。" : L",.";
-    case ToolbarAction::SimpTrad: return state_.simpTrad ? L"繁" : L"简";
-    case ToolbarAction::Engine:
+    case ToolbarAction::Mode:
+        // 一个按钮显示当前键盘模式，点一下按「五笔拼音 → 五笔 → 拼音 → 英文」循环
         if (state_.engine == "wbpy") return L"五拼";
         if (state_.engine == "py") return L"拼音";
         if (state_.engine == "en") return L"英文";
         return L"五笔";
+    case ToolbarAction::FullShape: return state_.fullShape ? L"全" : L"半";
+    case ToolbarAction::ChinesePunc: return state_.chinesePunc ? L"，。" : L",.";
+    case ToolbarAction::SimpTrad: return state_.simpTrad ? L"繁" : L"简";
     case ToolbarAction::Settings: return L"设置";
     case ToolbarAction::Close: return L"×";
     default: return L"";
@@ -86,7 +85,7 @@ std::wstring ToolbarWindow::labelOf(int index) const {
 
 bool ToolbarWindow::isActive(int index) const {
     switch (static_cast<ToolbarAction>(index)) {
-    case ToolbarAction::English: return state_.english;
+    case ToolbarAction::Mode: return state_.engine == "en";
     case ToolbarAction::FullShape: return state_.fullShape;
     case ToolbarAction::ChinesePunc: return state_.chinesePunc;
     case ToolbarAction::SimpTrad: return state_.simpTrad;
@@ -95,9 +94,8 @@ bool ToolbarWindow::isActive(int index) const {
 }
 
 void ToolbarWindow::setState(const ToolbarState &state) {
-    if (state.english == state_.english && state.fullShape == state_.fullShape &&
-        state.chinesePunc == state_.chinesePunc && state.simpTrad == state_.simpTrad &&
-        state.engine == state_.engine) {
+    if (state.fullShape == state_.fullShape && state.chinesePunc == state_.chinesePunc &&
+        state.simpTrad == state_.simpTrad && state.engine == state_.engine) {
         return;
     }
     state_ = state;

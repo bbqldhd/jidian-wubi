@@ -58,7 +58,7 @@ public:
     bool chinesePunc() const;
     bool fullShape() const;
     bool simpTrad() const;   // true=简入繁出
-    bool englishMode() const; // true=英文态（工具栏中/英按钮用）
+    bool englishMode() const; // true=英文键盘模式（四模式循环的最后一档）
     // 是否还有未完成的编码（供前端判断编码输入框是否该保持可见）
     bool hasPendingInput() const;
     // 引擎名与状态
@@ -85,11 +85,12 @@ public:
     void reset();
 
     // 切换功能（快捷键触发 / 设置面板触发）。
-    void toggleEnglish();      // 中英文切换
+    // 键盘模式循环：五笔拼音 → 五笔 → 拼音 → 英文 → 五笔拼音（左右 Shift 单击都走这里）。
+    // 不再提供独立的「中/英」开关：英文就是四模式循环的最后一档。
+    void cycleMode();
     void toggleFullShape();    // 全半角
     void toggleChinesePunc();  // 中英文标点
     void toggleSimpTrad();     // 简繁
-    void cycleEngine();        // 五笔 -> 五笔拼音 -> 拼音 -> 英文
     void toggleCharset();      // GB2312 / GBK 字符集过滤
 
     // 配置加载（含旧版极点 INI 迁移）。返回是否成功。

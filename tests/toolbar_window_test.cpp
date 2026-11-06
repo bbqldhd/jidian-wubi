@@ -20,7 +20,7 @@ int main() {
     int last = -1;
     t.setHandler([&](ToolbarAction a) { last = static_cast<int>(a); });
 
-    t.setState(ToolbarState{false, false, true, false, "wbzx"});
+    t.setState(ToolbarState{false, true, false, "wbzx"});
     t.show();
     assert(t.visible());
 
@@ -57,7 +57,7 @@ int main() {
     assert(GetWindowRect(h, &before));
     const int w0 = before.right - before.left;
 
-    t.setState(ToolbarState{true, true, false, true, "py"});
+    t.setState(ToolbarState{true, false, true, "py"});
     RECT after{};
     assert(GetWindowRect(h, &after));
     assert((after.right - after.left) == w0);

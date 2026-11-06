@@ -43,20 +43,65 @@ using freewb::WbzxEngine;
 
 namespace {
 
-// 中文标点映射（对齐 10.8.9 symbol.txt 的默认值）
+// 中文标点映射（对齐 10.8.9 symbol.txt 的默认值，并补齐引号/书名号/方头括号）
 const std::unordered_map<char, const char *> kCnPunc = {
-    {'`', "`"},   {'~', "~"},   {'!', "！"}, {'@', "·"},  {'#', "#"},   {'$', "￥"},
+    {'`', "`"},   {'~', "～"},  {'!', "！"}, {'@', "·"},  {'#', "#"},   {'$', "￥"},
     {'%', "%"},   {'^', "…"},   {'&', "—"},  {'*', "*"},  {'(', "（"},  {')', "）"},
-    {'-', "－"},  {'_', "—"},   {'=', "＝"}, {'+', "+"},  {'[', "["},   {'{', "{"},
-    {']', "]"},   {'}', "}"},   {'\\', "、"},{'|', "｜"}, {';', "；"},  {':', "："},
-    {',', "，"},  {'.', "。"},  {'/', "、"}, {'?', "？"},
+    {'-', "－"},  {'_', "—"},   {'=', "＝"}, {'+', "＋"}, {'[', "【"},  {'{', "『"},
+    {']', "】"},  {'}', "』"},  {'\\', "、"},{'|', "｜"}, {';', "；"},  {':', "："},
+    {',', "，"},  {'<', "《"},  {'.', "。"}, {'>', "》"}, {'/', "／"},  {'?', "？"},
 };
 
-// 智能标点配对（成对，左符进入、右符配对输出）
-const char kAutoPairLeft[]  = "([{\"'";
-const char kAutoPairRight[] = ")]}\"'";
+// 需要成对输出的标点：首次给左符，再次给右符（引号类无法把光标塞进中间，只能这样交替）
+struct PuncPair {
+    char ascii;
+    const char *open;
+    const char *close;
+};
+const PuncPair kPuncPairs[] = {
+    {'"', "\xE2\x80\x9C", "\xE2\x80\x9D"},   // “ ”
+    {'\'', "\xE2\x80\x98", "\xE2\x80\x99"},  // ‘ ’
+};
+
+const char *puncPairAt(char c) {
+    for (const PuncPair &p : kPuncPairs) {
+        if (p.ascii == c) return p.open;
+    }
+    return nullptr;
+}
+
+// ASCII → 全角（全角模式下没有中文标点映射的字符走这里）
+std::string toFullWidth(char c) {
+    unsigned int cp = static_cast<unsigned char>(c);
+    if (cp >= 0x21 && cp <= 0x7E) cp += 0xFEE0;
+    else if (cp == 0x20) cp = 0x3000;
+    else return std::string(1, c);
+
+    std::string out;
+    if (cp < 0x800) {
+        out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else {
+        out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+    return out;
+}
 
 bool isLetterCode(char c) { return (c >= 'a' && c <= 'z'); }
+
+// 这个字符在中文标点模式下是否会变成别的字符（决定要不要接管这个按键）
+bool needsPuncConversion(char c, bool chinesePunc, bool fullShape) {
+    if (chinesePunc) {
+        if (puncPairAt(c)) return true;
+        const auto it = kCnPunc.find(c);
+        // 映射成自己（# % * `）不算转换：这种键必须留给应用
+        if (it != kCnPunc.end() && (it->second[0] != c || it->second[1] != '\0')) return true;
+    }
+    return fullShape && c > 0x20 && c < 0x7F;
+}
+
 bool isDigit(char c) { return (c >= '0' && c <= '9'); }
 
 } // namespace
@@ -80,12 +125,13 @@ struct Session::Impl {
     int pageIndex_ = 0;
     int pageSize_ = 5;
     int candCursor_ = 0;      // 当前页内高亮候选（0 起），↑/↓ 移动
-    bool englishMode_ = false; // 中英文态（false=中文输入）
     bool commitExactPending_ = false;
 
-    // 智能标点配对状态
-    bool smartPairOpen_ = false;
-    char smartPairOpenChar_ = 0;
+    // 引号配对状态（“” 与 ‘’ 各一套）。不随组字复位：它是文档级上下文，
+    // 清掉的话每次上屏后又会从“左引号”重新开始。
+    bool quoteOpen_[2] = {true, true};
+
+    bool isEnglish() const { return engineIdx == kEn; }
 
     // 简繁转换钩子（前端注入 opencc 或旧版映射）
     std::function<std::string(const std::string &)> tradConverter;
@@ -127,6 +173,24 @@ struct Session::Impl {
         return tradConverter(s);
     }
 
+    // ASCII 标点 → 实际要上屏的字符串（中文标点 / 全角 / 原样）
+    std::string punctuation(char c, bool chinesePunc, bool fullShape) {
+        if (chinesePunc) {
+            for (int i = 0; i < 2; ++i) {
+                if (kPuncPairs[i].ascii != c) continue;
+                // 引号成对：左、右交替（关掉智能配对就固定输出左引号）
+                const bool autoPair = settings::instance().get_puncAutoPair();
+                const bool open = quoteOpen_[i] || !autoPair;
+                if (autoPair) quoteOpen_[i] = !quoteOpen_[i];
+                return open ? kPuncPairs[i].open : kPuncPairs[i].close;
+            }
+            const auto it = kCnPunc.find(c);
+            if (it != kCnPunc.end()) return it->second;
+        }
+        if (fullShape) return toFullWidth(c);
+        return std::string(1, c);
+    }
+
     int pageCount() const {
         const int n = static_cast<int>(cand_.texts.size());
         if (n == 0) return 0;
@@ -154,7 +218,7 @@ struct Session::Impl {
     // 组装 preedit / 候选页（processKey 尾部、翻页与鼠标选词共用）
     void fillOutcome(SessionOutcome &out) {
         out.state = state;
-        out.englishMode = englishMode_;
+        out.englishMode = isEnglish();
         if (state == SessionState::Idle || inputCode_.empty()) return;
 
         out.preedit = lead_ + inputCode_;
@@ -220,7 +284,7 @@ void Session::reset() { impl_->resetSession(); }
 bool Session::chinesePunc() const { return settings::instance().get_chinesePunc(); }
 bool Session::fullShape() const { return settings::instance().get_fullWidthFlg(); }
 bool Session::simpTrad() const { return settings::instance().get_simpTradFlg(); }
-bool Session::englishMode() const { return impl_->englishMode_; }
+bool Session::englishMode() const { return impl_->isEnglish(); }
 bool Session::hasPendingInput() const {
     const auto &im = *impl_;
     return !im.inputCode_.empty() || !im.lead_.empty();
@@ -234,30 +298,37 @@ std::string Session::engineName() const {
     }
 }
 
-void Session::toggleEnglish() { impl_->englishMode_ = !impl_->englishMode_; impl_->resetSession(); }
 void Session::toggleFullShape() { settings::instance().set_fullWidthFlg(!fullShape()); }
 void Session::toggleChinesePunc() { settings::instance().set_chinesePunc(!chinesePunc()); }
 void Session::toggleSimpTrad() { settings::instance().set_simpTradFlg(!simpTrad()); }
-void Session::cycleEngine() {
-    auto &im = *impl_;
-    // 只在三种编码方案之间轮转（英文态由中/英切换负责，不作为方案）
-    bool enabled[3] = {settings::instance().get_WbzxEngine(), settings::instance().get_WbpyEngine(),
-                       settings::instance().get_PyEngine()};
-    if (!enabled[0] && !enabled[1] && !enabled[2]) enabled[0] = enabled[1] = enabled[2] = true;
 
-    const int cur = (im.engineIdx >= 0 && im.engineIdx < 3) ? im.engineIdx : 0;
-    int next = cur;
-    for (int step = 1; step <= 3; ++step) {
-        const int cand = (cur + step) % 3;
-        if (enabled[cand]) {
-            next = cand;
-            break;
-        }
+void Session::cycleMode() {
+    auto &im = *impl_;
+    // 四模式固定顺序，左右 Shift 单击都按这条链走
+    static const int kOrder[] = {Impl::kWbpy, Impl::kWbzx, Impl::kPy, Impl::kEn};
+    constexpr int kCount = static_cast<int>(sizeof(kOrder) / sizeof(kOrder[0]));
+
+    bool schemeOn[3] = {settings::instance().get_WbzxEngine(), settings::instance().get_WbpyEngine(),
+                        settings::instance().get_PyEngine()};
+    if (!schemeOn[0] && !schemeOn[1] && !schemeOn[2]) schemeOn[0] = schemeOn[1] = schemeOn[2] = true;
+
+    int pos = 0;
+    for (int i = 0; i < kCount; ++i) {
+        if (kOrder[i] == im.engineIdx) { pos = i; break; }
     }
+
+    int next = im.engineIdx;
+    for (int step = 1; step <= kCount; ++step) {
+        const int cand = kOrder[(pos + step) % kCount];
+        // 英文档永远可用；三种编码方案受设置开关控制，关掉的跳过
+        if (cand == Impl::kEn || schemeOn[cand]) { next = cand; break; }
+    }
+
     im.engineIdx = next;
     im.resetSession();
-    // 记住选择：下次激活/重启仍用这个方案
-    settings::instance().set_inputMode("engine:" + engineName());
+
+    // 只记住编码方案：英文是临时状态，重启后不该把用户锁在英文键盘上
+    if (next != Impl::kEn) settings::instance().set_inputMode("engine:" + engineName());
 }
 
 char vkToCodeChar(int vk, bool shift) {
@@ -304,29 +375,29 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
     auto &im = *impl_;
     SessionOutcome out;
     out.state = im.state;
-    out.englishMode = im.englishMode_;
+    out.englishMode = im.isEnglish();
 
-    // Ctrl 快捷键（全局，无论中英文态）
+    // Ctrl 快捷键（全局，无论哪个模式）
     if (ctrl && !alt && !shift) {
         switch (vk) {
         case 'M': toggleCharset(); out.handled = true; break;
         case ',': /* 设置面板（前端处理） */ out.handled = true; break;
-        case ' ': // 中英文切换（备用，默认右 Shift）
-            toggleEnglish(); out.handled = true; break;
+        case ' ': // 键盘模式循环（备用；常规入口是左右 Shift 单击）
+            cycleMode(); out.handled = true; break;
         default: break;
         }
-        if (out.handled) { out.state = im.state; return out; }
+        if (out.handled) { out.state = im.state; out.englishMode = im.isEnglish(); return out; }
     }
 
-    // 中英文切换：右 Shift（默认 CN_EN=RShift）
-    if (shift && vk == VK_RSHIFT && !ctrl && !alt) {
-        toggleEnglish();
-        out.handled = true; out.state = im.state; out.englishMode = im.englishMode_;
+    // 左右 Shift 单击切模式（TSF 前端另有“按下不切、松开才切”的判定，这里守住状态机）
+    if (shift && (vk == VK_RSHIFT || vk == 0xA0 /*VK_LSHIFT*/) && !ctrl && !alt) {
+        cycleMode();
+        out.handled = true; out.state = im.state; out.englishMode = im.isEnglish();
         return out;
     }
 
-    // 英文态：整键交给应用处理，输入法不吞键（自己插字符会破坏快捷键与自动补全）
-    if (im.englishMode_ && im.state == SessionState::Idle) {
+    // 英文模式：整键交给应用处理，输入法不吞键（自己插字符会破坏快捷键与自动补全）
+    if (im.isEnglish() && im.state == SessionState::Idle) {
         return out;
     }
 
@@ -484,9 +555,16 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
             out.commitText = im.applyTrad(im.cand_.texts[2]);
             im.resetSession(); out.handled = true; out.state = im.state; return out;
         }
-        // 翻页 - / =
-        if (c == '-') { if (im.pageIndex_ > 0) { --im.pageIndex_; im.candCursor_ = 0; out.handled = true; } }
-        else if (c == '=') { if (im.pageIndex_ + 1 < im.pageCount()) { ++im.pageIndex_; im.candCursor_ = 0; out.handled = true; } }
+        // 翻页 - / =：只有正在选词时才是翻页键。空闲时它们是普通标点，
+        // 不能在这里被吃掉，否则「－」「＝」永远打不出来。
+        if ((c == '-' || c == '=') && !im.cand_.texts.empty()) {
+            if (c == '-') {
+                if (im.pageIndex_ > 0) { --im.pageIndex_; im.candCursor_ = 0; }
+            } else if (im.pageIndex_ + 1 < im.pageCount()) {
+                ++im.pageIndex_; im.candCursor_ = 0;
+            }
+            out.handled = true;   // 有候选时归输入法，翻不动也算消费掉
+        }
         else if (c && isLetterCode(c)) {
             // 编码输入
             im.inputCode_.push_back(c);
@@ -521,6 +599,12 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
             // 否则「1」会被打进文档，把正在拼的编码打断。
             // 这里要把当前编码原样回填，否则上层会当成“空结果”把组合区清掉。
             if (im.inputCode_.empty() && im.state == SessionState::Idle) {
+                // 全角模式：数字也要全角，否则「全角」只对字母生效，很割裂
+                if (fullShape()) {
+                    out.commitText = toFullWidth(c);
+                    out.handled = true; out.state = im.state;
+                    return out;
+                }
                 return out;
             }
             im.fillOutcome(out);
@@ -528,15 +612,19 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
             return out;
         } else if (c) {
             // 标点：有候选→顶字上屏；无候选→标点转换
+            // 空闲且这个字符不需要转换（中文标点/全角都关）就整键放行，
+            // 别把应用原本的按键行为替换成一次等价的自插字符。
+            const bool convert = needsPuncConversion(c, chinesePunc(), fullShape());
+            if (!convert && im.cand_.texts.empty() && im.inputCode_.empty()) return out;
+
             std::string candText;
             if (!im.cand_.texts.empty()) {
                 int b = 0, e = 0; im.pageRange(b, e);
                 candText = im.applyTrad(im.cand_.texts[b]);
             }
+            const std::string punc = im.punctuation(c, chinesePunc(), fullShape());
             im.resetSession();
 
-            std::string punc = chinesePunc() && kCnPunc.count(c) ? kCnPunc.at(c) : std::string(1, c);
-            // 数字后自动半角（HalfCharFollowNum='.'）：数字后 '.' 输出半角
             out.commitText = candText + punc;
             out.handled = true; out.state = im.state;
             return out;
@@ -575,24 +663,20 @@ bool Session::wantsKey(int vk, bool shift, bool ctrl, bool alt) const {
         }
     }
 
-    // 空闲 + 英文态：全部放行
-    if (im.englishMode_) return false;
+    // 空闲 + 英文模式：全部放行
+    if (im.isEnglish()) return false;
 
     // 空闲：只有小写字母起编码；Shift+字母留给应用（大写输入/快捷键）
     if (vk >= 'A' && vk <= 'Z') return !shift;
 
-    // 空闲：数字不归输入法
-    if (vk >= '0' && vk <= '9') return false;
+    // 空闲：数字不归输入法（全角模式例外，全角数字要自己上屏）
+    if (vk >= '0' && vk <= '9') return fullShape();
 
-    // 空闲：中文标点转换
-    switch (vk) {
-    case VK_OEM_COMMA: case VK_OEM_PERIOD: case VK_OEM_1: case VK_OEM_7:
-    case VK_OEM_2: case VK_OEM_3: case VK_OEM_4: case VK_OEM_5: case VK_OEM_6:
-    case VK_OEM_MINUS: case VK_OEM_PLUS:
-        return true;
-    default:
-        return false;
-    }
+    // 空闲：中文标点 / 全角转换。只有真的会变成别的字符时才接管，
+    // 否则（例如 # % * ` 或两个开关都关）按键原样交给应用。
+    const char c = vkToCodeChar(vk, shift);
+    if (c) return needsPuncConversion(c, chinesePunc(), fullShape());
+    return false;
 }
 
 SessionOutcome Session::selectCandidate(int index) {
@@ -603,7 +687,7 @@ SessionOutcome Session::selectCandidate(int index) {
     }
     im.resetSession();
     out.state = im.state;
-    out.englishMode = im.englishMode_;
+    out.englishMode = im.isEnglish();
     out.handled = true;
     return out;
 }

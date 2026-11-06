@@ -126,8 +126,8 @@ private:
     void launchSettings() const;
     // 工具栏只在“有可用编辑上下文”时显示，避免每个线程各弹一条
     void updateToolbarVisibility();
-    // Shift 单击（其间没按别的键）切中英
-    void toggleEnglishFromShortcut();
+    // Shift 单击（其间没按别的键）切键盘模式：五笔拼音 → 五笔 → 拼音 → 英文
+    void cycleModeFromShortcut();
     HRESULT requestEdit(EditSessionType type, const std::string &textUtf8, const std::string &preeditUtf8,
                         const std::vector<std::wstring> &cands, int cursor = 0, bool hasPrev = false,
                         bool hasNext = false, const std::string &aux = std::string());

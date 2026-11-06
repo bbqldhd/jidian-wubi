@@ -24,7 +24,7 @@ using namespace freeime11;
 namespace {
 
 void switchTo(Session &s, const char *target) {
-    for (int i = 0; i < 5 && s.engineName() != target; ++i) s.cycleEngine();
+    for (int i = 0; i < 5 && s.engineName() != target; ++i) s.cycleMode();
     assert(s.engineName() == target);
 }
 
@@ -54,7 +54,7 @@ Typed typeCode(Session &s, const std::string &code) {
 } // namespace
 
 int main() {
-    // 记下当前方案，测完还原（cycleEngine 会把选择写回配置）
+    // 记下当前方案，测完还原（cycleMode 会把选择写回配置）
     std::string original;
     {
         Session probe;
@@ -120,7 +120,7 @@ int main() {
     // 还原用户原本的输入方案
     {
         Session restore;
-        for (int i = 0; i < 5 && restore.engineName() != original; ++i) restore.cycleEngine();
+        for (int i = 0; i < 5 && restore.engineName() != original; ++i) restore.cycleMode();
         assert(restore.engineName() == original);
     }
 
