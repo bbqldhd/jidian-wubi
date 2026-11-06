@@ -13,10 +13,16 @@
 # FreeIME 11 —— MinGW (Dev-C++) 一键构建脚本
 #
 # 用法：在 freeime11-win 目录下执行  bash build_mingw.sh
-#      JOBS=4 bash build_mingw.sh     # 限制并发数（默认取 CPU 核数，最多 16）
+#      JOBS=16 bash build_mingw.sh    # 想要极限速度：拉满逻辑线程
+#      JOBS=10 bash build_mingw.sh    # 边编译边干别的：留出余量
 #
 # 编译方式：每个 .cpp 单独编成 build/obj/*.o，多路并行；没有改动的源文件直接跳过，
 # 只重编改动过的，最后再链接。全量构建和增量构建走同一套流程。
+#
+# 并发数默认取 **物理核心数**（i5-12500H 是 12），不是逻辑线程数（16）：
+# 并行数超过物理核只会互抢缓存，而这些 TU 单个编译峰值能吃到几百 MB 内存，
+# 16 个一起上在 16G 机器上容易换页，反而更慢。实测 16 线程 57.7s、12 线程 65.9s，
+# 差的这 8 秒换来的是编译时机器还能正常用。
 set -e
 
 GPP="/c/Program Files (x86)/Dev-Cpp/MinGW64/bin/g++.exe"
@@ -24,9 +30,22 @@ WINDRES="/c/Program Files (x86)/Dev-Cpp/MinGW64/bin/windres.exe"
 MGW="/c/Program Files (x86)/Dev-Cpp/MinGW64"
 export PATH="$MGW/bin:$MGW/lib/gcc/x86_64-w64-mingw32/10.3.0:$PATH"
 
-# 并发数：默认按核数，8 是这台机器上比较稳的档位
+# 物理核心数（wmic 优先，退到 PowerShell，再退到逻辑核数）
+physical_cores() {
+    local n
+    n=$(wmic cpu get NumberOfCores /value 2>/dev/null | tr -d '\r' | sed -n 's/^NumberOfCores=//p' | head -1)
+    if [ -z "$n" ]; then
+        n=$(powershell -NoProfile -Command "(Get-CimInstance Win32_Processor).NumberOfCores" 2>/dev/null |
+            tr -d '\r' | head -1)
+    fi
+    case "$n" in
+        '' | *[!0-9]*) n=$(nproc 2>/dev/null || echo 8) ;;
+    esac
+    echo "$n"
+}
+
 if [ -z "$JOBS" ]; then
-    JOBS=$(nproc 2>/dev/null || echo 8)
+    JOBS=$(physical_cores)
 fi
 [ "$JOBS" -gt 16 ] && JOBS=16
 [ "$JOBS" -lt 1 ] && JOBS=1

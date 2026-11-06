@@ -76,8 +76,12 @@ ctest --test-dir build
 ### MinGW (Dev-C++) 一键构建（本机已验证）
 
 ```bash
-bash build_mingw.sh
+bash build_mingw.sh            # 默认并发 = 物理核心数（i5-12500H 上是 12）
+JOBS=16 bash build_mingw.sh    # 想拉满逻辑线程
 ```
+
+每个 `.cpp` 单独编成 `build/obj/*.o` 并行编译，源文件没改动就跳过，再统一链接。
+全量约 60 秒、增量约 25 秒。
 
 产出：`build/FreeIME11.dll`（TSF 输入法）、`build/freeime11-migrate.exe`、
 `build/freeime11-settings.exe`、`build/freeime11-uninstall.exe`、
