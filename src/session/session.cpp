@@ -334,47 +334,57 @@ void Session::cycleMode() {
 char vkToCodeChar(int vk, bool shift) {
     /* Windows 送来的是 VK_OEM_* 这类虚拟键码，不是 ASCII：
        VK_OEM_PERIOD 是 0xBE，而 '.' 是 0x2E，两者不相等。
-       这里必须先归一化成 ASCII，否则所有符号键都会被当成“不可编码”返回 0，
-       中文标点就整个失效（v11.2.3 修的就是这个）。 */
+       所以先把 VK_OEM_* 归一化成 ASCII 字符，再做上档映射。
+
+       ★ 归一化必须走独立的局部变量：ASCII 标点和虚拟键码存在**撞号**，
+         VK_DELETE=0x2E 就是 '.'、VK_INSERT=0x2D 就是 '-'、VK_SNAPSHOT=0x2C 就是 ','
+         、VK_LWIN=0x5B 就是 '['、VK_NUMPAD0=0x60 就是 '`'。
+         如果把裸 ASCII 也当输入收下，Delete 会变成「。」、Win 键会变成「【」。 */
+    char ch = 0;
 #ifdef VK_OEM_1
     switch (vk) {
-    case VK_OEM_1:      vk = ';';  break;   // ; :
-    case VK_OEM_PLUS:   vk = '=';  break;   // = +
-    case VK_OEM_COMMA:  vk = ',';  break;   // , <
-    case VK_OEM_MINUS:  vk = '-';  break;   // - _
-    case VK_OEM_PERIOD: vk = '.';  break;   // . >
-    case VK_OEM_2:      vk = '/';  break;   // / ?
-    case VK_OEM_3:      vk = '`';  break;   // ` ~
-    case VK_OEM_4:      vk = '[';  break;   // [ {
-    case VK_OEM_5:      vk = '\\'; break;   // \ |
-    case VK_OEM_6:      vk = ']';  break;   // ] }
-    case VK_OEM_7:      vk = '\''; break;   // ' "
+    case VK_OEM_1:      ch = ';';  break;   // ; :
+    case VK_OEM_PLUS:   ch = '=';  break;   // = +
+    case VK_OEM_COMMA:  ch = ',';  break;   // , <
+    case VK_OEM_MINUS:  ch = '-';  break;   // - _
+    case VK_OEM_PERIOD: ch = '.';  break;   // . >
+    case VK_OEM_2:      ch = '/';  break;   // / ?
+    case VK_OEM_3:      ch = '`';  break;   // ` ~
+    case VK_OEM_4:      ch = '[';  break;   // [ {
+    case VK_OEM_5:      ch = '\\'; break;   // \ |
+    case VK_OEM_6:      ch = ']';  break;   // ] }
+    case VK_OEM_7:      ch = '\''; break;   // ' "
     default: break;
     }
 #endif
 
+    if (ch) {
+        // 上档符号（只对归一化出来的符号键生效）
+        switch (ch) {
+        case '`':  return shift ? '~' : ch;
+        case '-':  return shift ? '_' : ch;
+        case '=':  return shift ? '+' : ch;
+        case '[':  return shift ? '{' : ch;
+        case ']':  return shift ? '}' : ch;
+        case '\\': return shift ? '|' : ch;
+        case ';':  return shift ? ':' : ch;
+        case '\'': return shift ? '"' : ch;
+        case ',':  return shift ? '<' : ch;
+        case '.':  return shift ? '>' : ch;
+        case '/':  return shift ? '?' : ch;
+        default:   return ch;
+        }
+    }
+
+    // 字母和数字的虚拟键码本来就和 ASCII 同值（0x41–0x5A / 0x30–0x39）
     if (vk >= 'A' && vk <= 'Z') return static_cast<char>(vk - 'A' + 'a');
     if (vk >= '0' && vk <= '9') {
         if (!shift) return static_cast<char>(vk);
         static const char kNumShift[10] = {')', '!', '@', '#', '$', '%', '^', '&', '*', '('};
         return kNumShift[vk - '0'];
     }
-    // 符号键（shift 上档）
-    static char kShifted[256] = {0};
-    static bool inited = false;
-    if (!inited) {
-        inited = true;
-        kShifted['`'] = '~'; kShifted['1'] = '!'; kShifted['2'] = '@'; kShifted['3'] = '#';
-        kShifted['4'] = '$'; kShifted['5'] = '%'; kShifted['6'] = '^'; kShifted['7'] = '&';
-        kShifted['8'] = '*'; kShifted['9'] = '('; kShifted['0'] = ')'; kShifted['-'] = '_';
-        kShifted['='] = '+'; kShifted['['] = '{'; kShifted[']'] = '}'; kShifted['\\'] = '|';
-        kShifted[';'] = ':'; kShifted['\''] = '"'; kShifted[','] = '<'; kShifted['.'] = '>';
-        kShifted['/'] = '?';
-    }
-    if (vk == '`' || vk == '-' || vk == '=' || vk == '[' || vk == ']' || vk == '\\' ||
-        vk == ';' || vk == '\'' || vk == ',' || vk == '.' || vk == '/') {
-        return shift ? kShifted[vk] : static_cast<char>(vk);
-    }
+
+    // 其余一律不认。不要在这里按 ASCII 判断标点，否则会吃掉 Delete/Insert/PrintScreen/Win 等键。
     return 0;
 }
 

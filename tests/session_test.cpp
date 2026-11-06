@@ -25,10 +25,16 @@ int main() {
     assert(vkToCodeChar('A', true) == 'a');
     assert(vkToCodeChar('3', false) == '3');
     assert(vkToCodeChar('3', true) == '#');
-    assert(vkToCodeChar('-', false) == '-');
-    assert(vkToCodeChar('-', true) == '_');
-    assert(vkToCodeChar(';', false) == ';');
-    assert(vkToCodeChar(';', true) == ':');
+    assert(vkToCodeChar(0xBD /*VK_OEM_MINUS*/, false) == '-');
+    assert(vkToCodeChar(0xBD, true) == '_');
+    assert(vkToCodeChar(0xBA /*VK_OEM_1*/, false) == ';');
+    assert(vkToCodeChar(0xBA, true) == ':');
+    // 撞号键必须不认：VK_DELETE=0x2E 和 '.'、VK_INSERT=0x2D 和 '-' 数值相同
+    assert(vkToCodeChar(0x2E /*VK_DELETE*/, false) == 0);
+    assert(vkToCodeChar(0x2D /*VK_INSERT*/, false) == 0);
+    assert(vkToCodeChar(0x2C /*VK_SNAPSHOT*/, false) == 0);
+    assert(vkToCodeChar(0x5B /*VK_LWIN*/, false) == 0);
+    assert(vkToCodeChar(0x60 /*VK_NUMPAD0*/, false) == 0);
     assert(vkToCodeChar(0x0D, false) == 0); // 回车非可编码字符
 
     // 系统实际发的是 VK_OEM_*，不是 ASCII：这一步归一化错了，标点就全废

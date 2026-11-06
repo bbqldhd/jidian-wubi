@@ -117,7 +117,7 @@ int main() {
         }
         const std::string head = last.cands.empty() ? std::string() : last.cands[0];
 
-        const SessionOutcome o = typing.processKey(',', false, false, false);
+        const SessionOutcome o = typing.processKey(VK_COMMA, false, false, false);
         assert(o.handled);
         assert(o.commitText == head + "，");
         assert(o.preedit.empty());

@@ -138,9 +138,16 @@ JOBS=16 bash build_mingw.sh    # 想拉满逻辑线程
 **修复**：数字键按 Shift 分开判断——不按 Shift 保持原样（数字归应用，全角模式自己上屏全角数字），
 按了 Shift 就按标点表判断该不该接管。`#` `%` `*` 这种映射成自己的键仍然原样交给应用。
 
+**连带修掉一个撞号 bug**：`VK_DELETE` 的值是 `0x2E`，正好和 ASCII 的 `.` 同值；
+`VK_INSERT`(0x2D)=`-`、`VK_SNAPSHOT`(0x2C)=`,`、`VK_LWIN`(0x5B)=`[`、`VK_NUMPAD0`(0x60)=`` ` `` 也是。
+符号键修好之后，这些键被顺手当成了标点：**按 Delete 会打出「。」**。
+现在 `vkToCodeChar()` 只认 `VK_OEM_*` 归一化出来的字符，裸 ASCII 一律拒绝，
+Delete / Insert / PrintScreen / Win / 小键盘 0 全部原样交给应用。
+
 **验证**：新增 `tests/keygate_test.cpp`，把 `wantsKey()` 与 `processKey()` 逐键对照——
-数字 × Shift、全部 OEM 符号 × Shift、字母 × Shift，要求两边结论一致；
-八个自测全部通过。字母、空格、方向键、Ctrl/Alt 组合的行为没有任何变化。
+数字 × Shift、全部 OEM 符号 × Shift、字母 × Shift、以及上面那批撞号键，要求两边结论一致；
+八个自测全部通过。真机复测：`.`→`。`、`Shift+1`→`！`、`Shift+4`→`￥`、
+`xyz` + Home + Delete → `yz`。字母、空格、方向键、Ctrl/Alt 组合的行为没有任何变化。
 
 ## v11.2.2：拼音智能纠错、四模式轮换、中文标点
 

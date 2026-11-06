@@ -130,6 +130,21 @@ int main() {
         assert(s.processKey(VK_OEM_7_, false, false, false).commitText == "\xE2\x80\x99"); // ’
     }
 
+    // 撞号键：这些键的虚拟键码和 ASCII 标点数值相同，绝不能被当成标点吃掉
+    // （v11.2.3 初版就是把 VK_DELETE(0x2E) 当成 '.'，按 Delete 打出「。」）
+    {
+        Session s;
+        const int notChars[] = {0x2E /*VK_DELETE*/, 0x2D /*VK_INSERT*/, 0x2C /*VK_SNAPSHOT*/,
+                                0x5B /*VK_LWIN*/,   0x5C /*VK_RWIN*/,   0x5D /*VK_APPS*/,
+                                0x60 /*VK_NUMPAD0*/, 0x24 /*VK_HOME*/,   0x23 /*VK_END*/};
+        for (int vk : notChars) {
+            assert(vkToCodeChar(vk, false) == 0);
+            s.reset();
+            assert(!s.wantsKey(vk, false, false, false));
+            assert(s.processKey(vk, false, false, false).commitText.empty());
+        }
+    }
+
     // 全角模式：数字自己上屏，Shift+数字里没有中文映射的也变全角
     settings::instance().set_chinesePunc(false);
     settings::instance().set_fullWidthFlg(true);
