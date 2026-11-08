@@ -61,6 +61,8 @@ public:
     bool englishMode() const; // true=英文键盘模式（四模式循环的最后一档）
     // 是否还有未完成的编码（供前端判断编码输入框是否该保持可见）
     bool hasPendingInput() const;
+    // 候选框输入框里的原文（编码串，如 "wqv"）；组字中才有，空表示没有
+    std::string rawPreedit() const;
     // 引擎名与状态
     std::string engineName() const; // "wbzx" | "wbpy" | "py" | "en"
 

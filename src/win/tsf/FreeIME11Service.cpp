@@ -328,12 +328,18 @@ std::wstring modeLabelWide(const freeime11::Session &s) {
     return L"五笔拼音";
 }
 void FreeIME11Service::cycleModeFromShortcut() {
-    session_->cycleMode();
-    // 组字中切走：会话已复位，文档里的编码串要一并清掉
-    if (composition_) {
+    // 组字中按 Shift：先把「候选框输入框里的原文」上屏（与回车同效果），再切模式。
+    // commitText 会把组合区间里的编码串换成正文并结束组合，所以这一条不能再叠加清除，
+    // 否则编辑会话是异步排队的，后到的清除会把刚上屏的原文抹掉。
+    const std::string raw = session_->rawPreedit();
+    if (!raw.empty()) {
+        requestEdit(ES_Commit, raw, "", {});
+    } else if (composition_) {
+        // 没有原文可上屏，但组合还在：把文档里那串编码清掉
         CandidateWindow::instance().hide();
         requestEdit(ES_Clear, "", "", {});
     }
+    session_->cycleMode();
     syncToolbar();
     traceKey("CYCLE -> %s", session_->engineName().c_str());
     // 四模式链里「五笔拼音 → 五笔」都是打中文，不给反馈就像按了没反应，这里弹一条短提示
@@ -342,13 +348,21 @@ void FreeIME11Service::cycleModeFromShortcut() {
 
 void FreeIME11Service::onToolbarAction(ToolbarAction action) {
     switch (action) {
-    case ToolbarAction::Mode:
-        session_->cycleMode();
-        if (composition_) {
+    case ToolbarAction::Mode: {
+        /* 正在组字时，输入框里的原文先上屏（与回车同效果），再切模式。
+           顺序不能反：cycleMode() 会复位会话，原文就没了。
+           commitText 会把组合区间里的编码串换成正文并结束组合，
+           所以这里不能再叠加一次清除（编辑会话异步排队，后到的清除会抹掉原文）。 */
+        const std::string raw = session_->rawPreedit();
+        if (!raw.empty()) {
+            requestEdit(ES_Commit, raw, "", {});
+        } else if (composition_) {
             CandidateWindow::instance().hide();
             requestEdit(ES_Clear, "", "", {});
         }
+        session_->cycleMode();
         break;
+    }
     case ToolbarAction::FullShape:
         session_->toggleFullShape();
         break;
@@ -370,13 +384,6 @@ void FreeIME11Service::onToolbarAction(ToolbarAction action) {
         return;
     }
 
-    // 模式切换会重置会话：正在组字时把留在文档里的编码串清掉
-    if (action == ToolbarAction::Mode) {
-        if (composition_) {
-            CandidateWindow::instance().hide();
-            requestEdit(ES_Clear, "", "", {});
-        }
-    }
     syncToolbar();
     if (action == ToolbarAction::Mode) {
         CandidateWindow::instance().showHint(modeLabelWide(*session_));

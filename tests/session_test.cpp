@@ -223,6 +223,42 @@ int main() {
         assert(pick.state == SessionState::Idle);
     }
 
+    // 8) 回车上屏「原文」：候选框输入框里的编码串原样打进文档，不是候选词
+    {
+        Session t;
+        t.processKey('W', false, false, false);
+        t.processKey('Q', false, false, false);
+        assert(t.rawPreedit() == "wq");
+        const SessionOutcome o = t.processKey(0x0D /*VK_RETURN*/, false, false, false);
+        assert(o.handled);
+        assert(o.commitText == "wq");     // 原文，不是候选词
+        assert(o.preedit.empty());
+        assert(o.state == SessionState::Idle);
+        assert(t.rawPreedit().empty());
+    }
+
+    // 9) 组字中按 Shift：原文上屏（与回车同效果）+ 切模式
+    {
+        Session t;
+        const std::string before = t.engineName();
+        t.processKey('W', false, false, false);
+        t.processKey('Q', false, false, false);
+        const SessionOutcome o = t.processKey(0xA0 /*VK_LSHIFT*/, true, false, false);
+        assert(o.handled);
+        assert(o.commitText == "wq");
+        assert(o.state == SessionState::Idle);
+        assert(t.engineName() != before);   // 模式确实切了
+        assert(t.rawPreedit().empty());
+    }
+
+    // 10) 空闲态回车还是交给应用（不吞键）
+    {
+        Session t;
+        const SessionOutcome o = t.processKey(0x0D /*VK_RETURN*/, false, false, false);
+        assert(!o.handled);
+        assert(o.commitText.empty());
+    }
+
     std::puts("session smoke test: PASS");
     return 0;
 }

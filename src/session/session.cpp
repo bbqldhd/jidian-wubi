@@ -289,6 +289,12 @@ bool Session::hasPendingInput() const {
     const auto &im = *impl_;
     return !im.inputCode_.empty() || !im.lead_.empty();
 }
+
+std::string Session::rawPreedit() const {
+    const auto &im = *impl_;
+    if (im.inputCode_.empty() && im.lead_.empty()) return std::string();
+    return im.lead_ + im.inputCode_;
+}
 std::string Session::engineName() const {
     switch (impl_->engineIdx) {
     case Impl::kWbpy: return "wbpy";
@@ -422,6 +428,11 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
 
     // 左右 Shift 单击切模式（TSF 前端另有“按下不切、松开才切”的判定，这里守住状态机）
     if (shift && (vk == VK_RSHIFT || vk == 0xA0 /*VK_LSHIFT*/) && !ctrl && !alt) {
+        // 组字中按 Shift：先把输入框里的原文上屏（和回车一个效果），再切模式。
+        // 顺序不能反——cycleMode() 会复位会话，编码串就没了。
+        if (!im.inputCode_.empty() || !im.lead_.empty()) {
+            out.commitText = im.applyTrad(im.lead_ + im.inputCode_);
+        }
         cycleMode();
         out.handled = true; out.state = im.state; out.englishMode = im.isEnglish();
         return out;
@@ -511,8 +522,12 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
         break;
 
     case VK_RETURN: {
-        // 回车：有候选时上屏当前高亮候选（↑/↓ 选中的那个），否则清空编码
-        if (!im.cand_.texts.empty()) {
+        /* 回车：把「候选框输入框里的原文」原样上屏，不是候选词。
+           空格/数字才是「选词上屏」的语义；回车留给「我就是要打这串编码」。 */
+        if (!im.inputCode_.empty() || !im.lead_.empty()) {
+            out.commitText = im.applyTrad(im.lead_ + im.inputCode_);
+        } else if (!im.cand_.texts.empty()) {
+            // 没有输入串却还有候选（少见）：仍按老规矩上屏高亮候选
             int b = 0, e = 0; im.pageRange(b, e);
             const int idx = b + im.candCursor_;
             out.commitText = im.applyTrad(im.cand_.texts[idx < e ? idx : b]);
