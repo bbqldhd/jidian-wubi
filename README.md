@@ -14,7 +14,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.2.3**。
+版本号 **11.2.4**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -23,7 +23,7 @@
 > 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
 
 [![License](https://img.shields.io/badge/license-Mulan%20PSL%20v2-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v11.2.3-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
+[![Release](https://img.shields.io/badge/release-v11.2.4-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
 
 | 平台 | 地址 |
 |---|---|
@@ -44,7 +44,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序
-├── cmake/                   # 版本资源 11.2.3、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.2.4、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -107,7 +107,7 @@ JOBS=16 bash build_mingw.sh    # 想拉满逻辑线程
 
 ## 安装
 
-1. 运行 `FreeIME11-11.2.3-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+1. 运行 `FreeIME11-11.2.4-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
    写入「添加/删除程序」、创建开始菜单快捷方式）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
@@ -124,6 +124,26 @@ JOBS=16 bash build_mingw.sh    # 想拉满逻辑线程
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.2.4：协议改为木兰公共许可证第 2 版
+
+本项目由此前的「木兰**宽松**许可证 第 2 版」改为「木兰**公共**许可证 第 2 版」
+（Mulan Public License, Version 2 / Mulan PubL v2 / SPDX `MulanPub-2.0`）。
+
+两者不是同一份协议，差别很实在：
+
+| | 宽松版（Mulan PSL v2.0） | 公共版（Mulan PubL v2.0） |
+|---|---|---|
+| 分发本软件 | 附许可证副本、保留声明 | 同左，**并且要提供对应源代码（或书面要约）** |
+| 衍生作品 | 可按你自己的协议分发 | **必须以本许可证分发** |
+| 商业使用 | 允许 | 允许 |
+
+上游 FreeWB 用的是宽松版，宽松许可允许作者在保留上游版权声明的前提下以更强条款整体发布，
+所以本次变更对派生自 FreeWB 的部分同样成立——那些文件保留原始版权头。
+
+- LICENSE 换成协议全文（中英双语，2021年5月）
+- NOTICE 增加「许可变更记录」，第三方清单里 FreeWB 仍标 Mulan PSL v2.0
+- 全部源文件头 SPDX 改为 `MulanPub-2.0`，安装包许可证页同步更新
 
 ## v11.2.3：修 Shift 打不出中文标点
 
