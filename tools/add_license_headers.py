@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Inject the unified Mulan PSL v2 notice into every source file of this project.
+"""Inject the unified Mulan PubL v2 (木兰公共许可证第 2 版) notice into every source file.
 
 The licence requires the statement to sit at the very top of each source file,
 written in the comment syntax appropriate to that language.  This script is the
@@ -20,15 +20,15 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 NOTICE = [
-    "SPDX-License-Identifier: MulanPSL-2.0",
+    "SPDX-License-Identifier: MulanPub-2.0",
     "Copyright (c) 2026 Charry",
-    "Freeime11 is licensed under Mulan PSL v2.",
-    "You can use this software according to the terms and conditions of the Mulan PSL v2.",
-    "You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2",
+    "Freeime11 is licensed under Mulan PubL v2.",
+    "You can use this software according to the terms and conditions of the Mulan PubL v2.",
+    "You may obtain a copy of Mulan PubL v2 at: http://license.coscl.org.cn/MulanPubL-2.0",
     'THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,',
     "EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,",
     "MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.",
-    "See the Mulan PSL v2 for more details.",
+    "See the Mulan PubL v2 for more details.",
 ]
 
 # Directories that are vendored / generated and must keep their own headers.
@@ -83,6 +83,18 @@ def strip_old_header(text):
         i += 1
     if i >= len(lines):
         return text
+
+    # 块注释形式（Markdown 等）：<!-- ... --> 整体删掉
+    if lines[i].lstrip().startswith("<!--"):
+        j = i
+        while j < len(lines) and "-->" not in lines[j]:
+            j += 1
+        if j < len(lines):
+            j += 1  # 连同结束标签一起
+        while j < len(lines) and lines[j].strip() == "":
+            j += 1
+        return "".join(lines[:i] + lines[j:])
+
     first = lines[i].lstrip()
     if not first.startswith(("//", "#", ";", "REM ")):
         return text
@@ -93,7 +105,8 @@ def strip_old_header(text):
     while j < len(lines):
         s = lines[j].strip()
         if s.startswith(prefix) and re.search(
-            r"SPDX-License-Identifier|Copyright \(c\)|Mulan|木兰", lines[j]
+            r"SPDX-License-Identifier|Copyright \(c\)|Mulan|木兰"
+            r"|THIS SOFTWARE IS PROVIDED|EITHER EXPRESS|MERCHANTABILITY OR FIT", lines[j]
         ):
             j += 1
             continue
@@ -111,7 +124,8 @@ def apply_header(path, check_only):
     header = build_header(path)
     if header is None:
         return ("SKIP", path, "unsupported type")
-    if "See the Mulan PSL v2 for more details." in text:
+    if ("SPDX-License-Identifier: MulanPub-2.0" in text
+            and "See the Mulan PubL v2 for more details." in text):
         return ("SKIP", path, "already licensed")
 
     stripped = strip_old_header(text)

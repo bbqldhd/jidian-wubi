@@ -4,26 +4,42 @@ Copyright (c) 2026 Charry
 Project home:
   GitHub: https://github.com/bbqldhd/jidian-wubi
   Gitee : https://gitee.com/red-egg-carrying-ice-cream/jidian-wubi
+  GitCode: https://gitcode.com/Charlie_Charry/jidian-wubi
 
-本软件以「木兰宽松许可证，第 2 版」（Mulan Permissive Software License, Version 2,
-Mulan PSL v2.0）发布。许可证全文见同目录下的 LICENSE 文件，也可从
-http://license.coscl.org.cn/MulanPSL2 获取。
+本软件以「木兰公共许可证，第 2 版」（Mulan Public License, Version 2, Mulan PubL v2,
+SPDX: MulanPub-2.0）发布。许可证全文见同目录下的 LICENSE 文件，也可从
+http://license.coscl.org.cn/MulanPubL-2.0 获取。
 
 除非适用法律要求或书面同意，按本许可证分发的软件均按「现状」提供，
 不附带任何明示或默示的担保。
 
-Freeime11 is licensed under Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
+Freeime11 is licensed under Mulan PubL v2.
+You may obtain a copy of Mulan PubL v2 at: http://license.coscl.org.cn/MulanPubL-2.0
 
 每个源文件头部均带有同一段声明（按语言注释语法书写），由 tools/add_license_headers.py 统一注入。
+
+--------------------------------------------------------------------------------
+许可变更记录
+
+2026-11-08：本项目此前以「木兰宽松许可证，第 2 版」（Mulan Permissive Software License,
+Version 2, Mulan PSL v2.0）发布，现由版权人 Charry 统一改为「木兰公共许可证，第 2 版」
+（Mulan Public License, Version 2, Mulan PubL v2.0）。
+
+两份协议不是同一份文本：宽松版只要求保留声明、附许可证副本；公共版是 copyleft，
+额外要求分发本软件或其衍生作品时提供「对应源代码」（或书面要约），且衍生作品须以本许可证分发。
+
+上游 FreeWB 采用的是宽松版（Mulan PSL v2.0）。宽松许可允许作者在保留上游版权声明与许可声明的
+前提下以更强的条款整体发布，本次变更即依此进行；派生自 FreeWB 的部分仍按上游条款分发，
+详见下方第三方组件说明。
 
 --------------------------------------------------------------------------------
 第三方组件与来源
 
 1. FreeWB（https://gitee.com/openkylin/freewb）
-   许可证：Mulan PSL v2.0
+   许可证：Mulan PSL v2.0（宽松版，按上游条款）
    说明：`src/engine/`、`src/utils/` 中的引擎与工具代码派生自该项目，
    版权归 FreeWB 贡献者所有；本项目在其基础上做了 Windows 平台适配与修补。
+   这些文件保留其原始版权头，未加本项目的统一声明。
 
 2. spdlog（https://github.com/gabime/spdlog）
    许可证：MIT

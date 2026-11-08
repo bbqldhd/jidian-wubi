@@ -1,12 +1,12 @@
-REM SPDX-License-Identifier: MulanPSL-2.0
+REM SPDX-License-Identifier: MulanPub-2.0
 REM Copyright (c) 2026 Charry
-REM Freeime11 is licensed under Mulan PSL v2.
-REM You can use this software according to the terms and conditions of the Mulan PSL v2.
-REM You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
+REM Freeime11 is licensed under Mulan PubL v2.
+REM You can use this software according to the terms and conditions of the Mulan PubL v2.
+REM You may obtain a copy of Mulan PubL v2 at: http://license.coscl.org.cn/MulanPubL-2.0
 REM THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
 REM EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 REM MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-REM See the Mulan PSL v2 for more details.
+REM See the Mulan PubL v2 for more details.
 
 @echo off
 setlocal EnableExtensions

@@ -1,13 +1,13 @@
 <!--
-  SPDX-License-Identifier: MulanPSL-2.0
+  SPDX-License-Identifier: MulanPub-2.0
   Copyright (c) 2026 Charry
-  Freeime11 is licensed under Mulan PSL v2.
-  You can use this software according to the terms and conditions of the Mulan PSL v2.
-  You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
+  Freeime11 is licensed under Mulan PubL v2.
+  You can use this software according to the terms and conditions of the Mulan PubL v2.
+  You may obtain a copy of Mulan PubL v2 at: http://license.coscl.org.cn/MulanPubL-2.0
   THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
   EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
   MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-  See the Mulan PSL v2 for more details.
+  See the Mulan PubL v2 for more details.
 -->
 
 # 极点五笔 11 (FreeIME 11)
@@ -403,27 +403,34 @@ Delete / Insert / PrintScreen / Win / 小键盘 0 全部原样交给应用。
 
 ## 许可
 
-本项目以 **木兰宽松许可证，第 2 版（Mulan Permissive Software License, Version 2，Mulan PSL v2.0）** 开源，
+本项目以 **木兰公共许可证，第 2 版（Mulan Public License, Version 2，Mulan PubL v2 / SPDX: `MulanPub-2.0`）** 开源，
 许可证全文见 [`LICENSE`](LICENSE)，第三方组件与来源说明见 [`NOTICE`](NOTICE)。
 
 ```
 Copyright (c) 2026 Charry
-Freeime11 is licensed under Mulan PSL v2.
-You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at: http://license.coscl.org.cn/MulanPSL2
+Freeime11 is licensed under Mulan PubL v2.
+You can use this software according to the terms and conditions of the Mulan PubL v2.
+You may obtain a copy of Mulan PubL v2 at: http://license.coscl.org.cn/MulanPubL-2.0
 THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
 EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-See the Mulan PSL v2 for more details.
+See the Mulan PubL v2 for more details.
 ```
+
+> 2026-11-08 起，本项目由此前的「木兰**宽松**许可证 第 2 版」改为「木兰**公共**许可证 第 2 版」。
+> 两者不是同一份协议，宽松版只要求保留声明，公共版（copyleft）额外要求：
+> 分发本软件或其衍生作品时，必须提供**对应源代码**（或书面要约）并以本许可证分发。
 
 每个源文件头部均带有同一段声明（按语言注释语法书写），由 `tools/add_license_headers.py` 统一注入。
 
 注：根目录 `LICENSE` 已按许可证要求填入实际信息（`Copyright (c) 2026 Charry` / `Freeime11`）。
-GitHub 的许可证自动识别对木兰许可证较严格，填入真实信息后会显示为 `Other`（Gitee 仍识别为
-MulanPSL-2.0）；如需 GitHub 侧显示许可证徽标，可把这两处改回官方占位符。
+GitHub 的许可证自动识别对木兰协议支持有限，填入真实信息后可能显示为 `Other`；如需 GitHub 侧
+显示许可证徽标，可把这两处改回官方占位符。
 
-- 你可以自由使用、修改、分发本软件（含商业用途），但须保留版权与许可声明，并在分发时附上许可证副本。
-- `src/engine/`、`src/utils/` 中的引擎代码派生自 [FreeWB](https://gitee.com/openkylin/freewb)，版权归其贡献者所有，同样以 Mulan PSL v2.0 分发。
+- 你可以自由使用、修改本软件（含商业用途）；**分发本软件或其衍生作品时，须按本许可证提供对应源代码
+  并附上许可证副本**，衍生作品同样以本许可证分发。
+- `src/engine/`、`src/utils/` 中的引擎代码派生自 [FreeWB](https://gitee.com/openkylin/freewb)，
+  版权归其贡献者所有，**按上游的 Mulan PSL v2.0（宽松）分发**；宽松许可允许作者在保留上游版权声明的
+  前提下以更强条款整体发布，本项目即属此情形。
 - `third_party/spdlog` 为 MIT 许可；SQLite 为 Public Domain；libiconv 为 LGPL-2.1+（MinGW 运行库，静态链接）。详见 `NOTICE`。
 - 「极点五笔」「极点中文」名称与图标的权利归原作者所有；本项目为兼容性重制，与原作者无隶属关系。
