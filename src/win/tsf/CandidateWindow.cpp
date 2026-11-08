@@ -24,6 +24,8 @@ namespace {
 
 HINSTANCE g_hinst = nullptr;
 const wchar_t *kClassName = L"FreeIME11CandidateWnd";
+// 模式提示的自动消失定时器
+constexpr UINT_PTR kHintTimerId = 0x11E1;
 
 // GDI+ 惰性初始化：DllMain 里不能调 GdiplusStartup（可能死锁）
 ULONG_PTR gdiplusToken = 0;
@@ -96,7 +98,32 @@ void CandidateWindow::hide() {
     trackingLeave_ = false;
     // 只有「输入确实结束」才会走到这里；把编码清空，避免窗口重新显示时带着旧内容
     preedit_.clear();
+    if (hintActive_) {
+        hintActive_ = false;
+        if (hwnd_) KillTimer(hwnd_, kHintTimerId);
+    }
     if (hwnd_ && IsWindowVisible(hwnd_)) ShowWindow(hwnd_, SW_HIDE);
+}
+
+void CandidateWindow::showHint(const std::wstring &text, int ms) {
+    if (text.empty()) return;
+    ensureCreated();
+    if (!hwnd_) return;
+
+    // 优先贴着文档里的插入符；没有插入符（浏览器正文区等）就退到鼠标位置
+    POINT pt = caret_;
+    POINT caretPos{};
+    if (::GetCaretPos(&caretPos) && (caretPos.x || caretPos.y)) {
+        pt = caretPos;
+        ::ClientToScreen(::GetFocus(), &pt);
+    } else if (pt.x == 0 && pt.y == 0) {
+        ::GetCursorPos(&pt);
+    }
+
+    // 借用编码输入框渲染：候选清空、preedit 放提示文字
+    show({}, 0, false, false, std::wstring(), pt, text);
+    hintActive_ = true;
+    SetTimer(hwnd_, kHintTimerId, static_cast<UINT>(ms > 0 ? ms : 800), nullptr);
 }
 
 LRESULT CALLBACK CandidateWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -116,6 +143,15 @@ LRESULT CandidateWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         // 点击候选窗绝不能抢焦点：一旦文档失焦，TSF 会终止组合，
         // 候选窗跟着消失、后续按键也没人处理，看起来就是「候选框丢了」。
         return MA_NOACTIVATE;
+
+    case WM_TIMER:
+        // 模式提示到点自动收起（只处理自己的定时器，别影响候选窗其它逻辑）
+        if (wParam == kHintTimerId) {
+            KillTimer(hwnd, kHintTimerId);
+            hide();
+            return 0;
+        }
+        break;
 
     case WM_ERASEBKGND:
         return 1;
@@ -199,6 +235,11 @@ int CandidateWindow::hitTest(int x, int y) const {
 
 void CandidateWindow::show(const std::vector<std::wstring> &cands, int cursor, bool hasPrev, bool hasNext,
                            const std::wstring &aux, POINT caret, const std::wstring &preedit) {
+    // 真编码一进来就顶掉模式提示
+    if (hintActive_) {
+        hintActive_ = false;
+        if (hwnd_) KillTimer(hwnd_, kHintTimerId);
+    }
     preedit_ = preedit;
     // 未完成输入时（例如这一码暂时查不到候选、或用户只打了一半），即使候选为空也要
     // 保留顶部输入框；只有「编码已清空且没有候选」才是真正该收起的时刻。

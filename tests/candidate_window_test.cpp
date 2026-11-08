@@ -113,6 +113,37 @@ int main() {
     assert(!w.visible());
     assert(!w.hasPreedit());
 
+    // 模式提示条：切 Shift 时弹一小条「五笔」，不显示候选、到点自动收起
+    {
+        w.showHint(L"五笔", 300);
+        assert(w.visible());
+        assert(w.hintActive());
+        assert(w.preedit() == L"五笔");     // 借用编码输入框渲染
+        RECT hr{};
+        assert(GetClientRect(w.hwnd(), &hr));
+        assert(hr.right > 20 && hr.bottom > 10);
+
+        // 真编码进来要顶掉提示
+        w.show({L"你好"}, 0, false, false, L"", POINT{200, 200}, L"wq");
+        assert(!w.hintActive());
+        assert(w.preedit() == L"wq");
+
+        // 定时器到点后自动收起（泵一会儿消息，让 WM_TIMER 送达）
+        w.showHint(L"拼音", 120);
+        assert(w.hintActive());
+        const DWORD until = GetTickCount() + 1500;
+        while (GetTickCount() < until && w.hintActive()) {
+            MSG msg;
+            while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+            Sleep(15);
+        }
+        assert(!w.hintActive());
+        assert(!w.visible());
+    }
+
     std::puts("candidate window test: PASS");
     return 0;
 }

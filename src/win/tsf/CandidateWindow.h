@@ -44,6 +44,11 @@ public:
     void hide();
     bool visible() const;
 
+    // 短暂提示（切换键盘模式用）：在插入符附近显示一小条文字，ms 毫秒后自动消失。
+    // 复用顶部编码输入框的样式，所以看起来是一条轻量提示而不是候选框。
+    void showHint(const std::wstring &text, int ms = 800);
+    bool hintActive() const { return hintActive_; }
+
     // 编码输入框当前内容 / 是否还有未完成输入 / 输入框的客户区矩形（测试用）
     const std::wstring &preedit() const { return preedit_; }
     bool hasPreedit() const { return !preedit_.empty(); }
@@ -92,6 +97,8 @@ private:
 
     int hover_ = kNone;
     bool trackingLeave_ = false;
+    // 模式提示：借用编码输入框显示，hintActive_ 用来区分「真编码」和「提示」
+    bool hintActive_ = false;
 
     SelectHandler onSelect_;
     PageHandler onPage_;

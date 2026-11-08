@@ -17,11 +17,37 @@
 #include <shellapi.h>
 
 #include <cassert>
+#include <cstdarg>
+#include <cstdio>
 #include <new>
 
 #include "../../utils/utils.h"
 
 namespace {
+
+// 按键追踪：只有设了环境变量 FREEIME11_TRACE=1 才写 %TEMP%\freeime11-keys.log。
+// TSF 的问题（某个应用根本不投递 Shift、候选框丢失等）在外部看不出来，只能靠这个。
+void traceKey(const char *fmt, ...) {
+    static FILE *fp = nullptr;
+    static bool inited = false;
+    if (!inited) {
+        inited = true;
+        if (::GetEnvironmentVariableW(L"FREEIME11_TRACE", nullptr, 0) > 0) {
+            wchar_t path[MAX_PATH]{};
+            if (::GetTempPathW(MAX_PATH, path)) {
+                wcscat_s(path, L"freeime11-keys.log");
+                fp = _wfopen(path, L"a");
+            }
+        }
+    }
+    if (!fp) return;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(fp, fmt, ap);
+    va_end(ap);
+    std::fputc('\n', fp);
+    std::fflush(fp);
+}
 
 std::wstring Utf8ToWide(const std::string &s) {
     if (s.empty()) return std::wstring();
@@ -207,6 +233,7 @@ STDMETHODIMP FreeIME11Service::Deactivate() {
 STDMETHODIMP FreeIME11Service::OnKeyDown(ITfContext *pic, WPARAM wParam, LPARAM lParam, BOOL *pfEaten) {
     *pfEaten = FALSE;
     const int vk = static_cast<int>(wParam);
+    traceKey("DOWN  vk=%02X shift=%d pending=%d", vk, isShiftDown() ? 1 : 0, shiftTapPending_ ? 1 : 0);
     // 忽略系统重复键，但候选导航键允许长按连续移动
     if (lParam & 0x40000000) {
         const bool nav = (vk == VK_UP || vk == VK_DOWN || vk == VK_PRIOR || vk == VK_NEXT);
@@ -221,9 +248,16 @@ STDMETHODIMP FreeIME11Service::OnKeyDown(ITfContext *pic, WPARAM wParam, LPARAM 
 
     // Shift 只吃下、不切换：真正的判定在松开时做，Shift+字母/方向键不会误切中英
     if (isShiftVk(vk)) {
+        /* 标记必须在「do」阶段也打一次：有些应用（Win11 记事本这类打包应用）
+           压根不调用 OnTestKeyDown，只走 OnKeyDown，标记打不上就等于 Shift 没反应。
+           长按的重复键不能把已被其它键取消的标记重新点亮，所以看 lParam 的 repeat 位。 */
+        if (!(lParam & 0x40000000)) shiftTapPending_ = true;
         *pfEaten = TRUE;
         return S_OK;
     }
+
+    // 这里能看到所有按键（包括最终被放行的），任何其它键都取消「Shift 单击」判定
+    shiftTapPending_ = false;
 
     // 不该归输入法的键直接放行：Ctrl/Alt/Win 组合、空闲态的空格/回车/退格/数字等
     if (!session_->wantsKey(vk, shift, ctrl, alt)) return S_OK;
@@ -285,6 +319,14 @@ void FreeIME11Service::syncToolbar() {
     ToolbarWindow::instance().setState(st);
 }
 
+// 键盘模式的中文名（切模式时弹提示用）
+std::wstring modeLabelWide(const freeime11::Session &s) {
+    const std::string name = s.engineName();
+    if (name == "wbzx") return L"五笔";
+    if (name == "py") return L"拼音";
+    if (name == "en") return L"英文";
+    return L"五笔拼音";
+}
 void FreeIME11Service::cycleModeFromShortcut() {
     session_->cycleMode();
     // 组字中切走：会话已复位，文档里的编码串要一并清掉
@@ -293,6 +335,9 @@ void FreeIME11Service::cycleModeFromShortcut() {
         requestEdit(ES_Clear, "", "", {});
     }
     syncToolbar();
+    traceKey("CYCLE -> %s", session_->engineName().c_str());
+    // 四模式链里「五笔拼音 → 五笔」都是打中文，不给反馈就像按了没反应，这里弹一条短提示
+    CandidateWindow::instance().showHint(modeLabelWide(*session_));
 }
 
 void FreeIME11Service::onToolbarAction(ToolbarAction action) {
@@ -333,6 +378,9 @@ void FreeIME11Service::onToolbarAction(ToolbarAction action) {
         }
     }
     syncToolbar();
+    if (action == ToolbarAction::Mode) {
+        CandidateWindow::instance().showHint(modeLabelWide(*session_));
+    }
 }
 
 void FreeIME11Service::launchSettings() const {
@@ -357,6 +405,8 @@ STDMETHODIMP FreeIME11Service::OnKeyUp(ITfContext *, WPARAM wParam, LPARAM, BOOL
     const int vk = static_cast<int>(wParam);
     if (!isShiftVk(vk)) return S_OK;
 
+    traceKey("UP    vk=%02X pending=%d ctrl=%d alt=%d", static_cast<int>(wParam), shiftTapPending_ ? 1 : 0,
+             isCtrlDown() ? 1 : 0, isAltDown() ? 1 : 0);
     *pfEaten = TRUE;
     // 只有“按下后没碰过任何其它键”的 Shift 才算一次模式切换（左右 Shift 都算）
     const bool tap = shiftTapPending_ && !isCtrlDown() && !isAltDown();
@@ -368,6 +418,7 @@ STDMETHODIMP FreeIME11Service::OnKeyUp(ITfContext *, WPARAM wParam, LPARAM, BOOL
 STDMETHODIMP FreeIME11Service::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *pfEaten) {
     *pfEaten = FALSE;
     const int vk = static_cast<int>(wParam);
+    traceKey("TEST  vk=%02X repeat=%d", vk, (lParam & 0x40000000) ? 1 : 0);
     const bool shift = isShiftDown(), ctrl = isCtrlDown(), alt = isAltDown();
 
     // Shift 必须被“吃下”，否则 TSF 根本不会回调 OnKeyDown/OnKeyUp，
