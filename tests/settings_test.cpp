@@ -11,6 +11,7 @@
 // 配置通用读写自测：设置 GUI 依赖 setByKey/getByKey 正确覆盖 Bool/Int/String。
 // 用 FREEWB_DATA_DIR 指到临时目录，绝不碰用户真实配置。
 #include "../src/utils/settings.h"
+#include "../src/session/session.h"
 
 #include <cassert>
 #include <cstdio>
@@ -69,6 +70,43 @@ int main() {
     assert(s.getByKey("chinesePunc") == "true");
     assert(s.getByKey("candiWordCount") == "7");
     assert(s.getByKey("candiTextFontName") == "Microsoft YaHei UI");
+
+    // 已接线清单：新增接线时要与 settings.h 的实现同步
+    assert(settings::configIsWired("enterCommitPreedit"));
+    assert(settings::configIsWired("prevPageKey"));
+    assert(settings::configIsWired("nextPageKey"));
+    assert(settings::configIsWired("bgColor"));
+    assert(!settings::configIsWired("curSkinId"));
+    assert(!settings::configIsWired("inputStatistic"));
+    size_t wired = 0;
+    for (size_t i = 0; i < n; ++i) {
+        if (settings::configIsWired(metas[i].key)) ++wired;
+    }
+    assert(wired > 25 && wired < n);   // 有接线也有未接线，界面才有得标灰
+
+    // 回车开关：true = 上屏原文，false = 回到旧行为（上屏高亮候选）
+    // 这里用临时数据目录，无词库也没关系——编码输入本身不依赖词库。
+    {
+        freeime11::Session ses;
+        s.set_enterCommitPreedit(true);
+        ses.processKey('W', false, false, false);
+        ses.processKey('Q', false, false, false);
+        freeime11::SessionOutcome o = ses.processKey(0x0D, false, false, false);
+        assert(o.commitText == "wq");
+
+        s.set_enterCommitPreedit(false);
+        ses.reset();
+        ses.processKey('W', false, false, false);
+        ses.processKey('Q', false, false, false);
+        o = ses.processKey(0x0D, false, false, false);
+        assert(o.commitText != "wq");   // 不再把编码串原样上屏
+        s.set_enterCommitPreedit(true);
+    }
+
+    // 翻页键配置可写可读（行为需要多页候选，由 session_test 覆盖）
+    assert(s.setByKey("prevPageKey", "KEY_SLASH"));
+    assert(s.getByKey("prevPageKey") == "KEY_SLASH");
+    assert(s.get_prevPageKey() == "KEY_SLASH");
 
     std::puts("settings test: PASS");
     return 0;

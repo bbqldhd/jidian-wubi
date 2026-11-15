@@ -16,11 +16,15 @@
 
 #include <shellapi.h>
 
+#include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <new>
 
+#include "../../utils/settings.h"
 #include "../../utils/utils.h"
 
 namespace {
@@ -56,6 +60,17 @@ std::wstring Utf8ToWide(const std::string &s) {
     std::wstring w(n, L'\0');
     ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &w[0], n);
     return w;
+}
+
+// 配置里的颜色是 "#AARRGGBB" 字符串；格式不对就退回内置外观，别把窗口画成全黑。
+DWORD parseArgb(const std::string &text, DWORD fallback) {
+    std::string h = text;
+    if (!h.empty() && h[0] == '#') h.erase(0, 1);
+    if (h.size() != 8) return fallback;
+    for (unsigned char c : h) {
+        if (!std::isxdigit(c)) return fallback;
+    }
+    return static_cast<DWORD>(std::strtoul(h.c_str(), nullptr, 16));
 }
 
 bool isShiftDown() { return (::GetKeyState(VK_SHIFT) & 0x8000) != 0; }
@@ -120,6 +135,30 @@ STDMETHODIMP FreeIME11Service::EditRequest::DoEditSession(TfEditCookie ec) {
 
 FreeIME11Service::FreeIME11Service() : session_(new freeime11::Session()) {
     session_->loadSettings(freewb::userFreewbPath());
+
+    /* 候选窗外观交给配置驱动。provider 每次绘制都会被调用，
+       所以设置程序保存后下一次出候选就能看到新外观。
+       配置值仍等于默认值时不覆盖内置配色，避免升级后界面无端变样；
+       用户一旦改动（GUI 会写入非默认值）立刻生效。 */
+    CandidateWindow::instance().setAppearanceProvider([]() -> CandidateWindow::Appearance {
+        auto &cfg = settings::instance();
+        CandidateWindow::Appearance a;
+        const std::wstring font = Utf8ToWide(cfg.get_candiTextFontName());
+        if (!font.empty() && font != L"Noto Sans CJK SC") a.fontName = font;
+        const int sizeCfg = cfg.get_candiTextFontSize();
+        if (sizeCfg != 14) a.fontSize = std::clamp(sizeCfg, 8, 36);
+
+        auto colorOr = [](const std::string &v, const char *def, DWORD fallback) -> DWORD {
+            return v == def ? fallback : parseArgb(v, fallback);
+        };
+        a.bgColor = colorOr(cfg.get_bgColor(), "#ffffffff", a.bgColor);
+        a.borderColor = colorOr(cfg.get_borderColor(), "#ffa4c1e2", a.borderColor);
+        a.wordTextColor = colorOr(cfg.get_candiWordTextColor(), "#ff5f5b52", a.wordTextColor);
+        a.promptTextColor = colorOr(cfg.get_candiPromptTextColor(), "#ff5f5b52", a.promptTextColor);
+        a.radius = cfg.get_radius() == 5 ? a.radius : std::clamp(cfg.get_radius(), 0, 24);
+        a.transparency = std::clamp(cfg.get_transparency(), 0, 240);
+        return a;
+    });
 }
 
 FreeIME11Service::~FreeIME11Service() {

@@ -144,6 +144,28 @@ int main() {
         assert(!w.visible());
     }
 
+    // 外观注入：provider 的字号必须真的参与布局计算（不是只改了颜色没接线）
+    {
+        w.setAppearanceProvider(nullptr);
+        w.show({L"你好"}, 0, false, false, L"", POINT{300, 300}, L"wq");
+        RECT normal{};
+        assert(GetClientRect(w.hwnd(), &normal));
+        const int normalH = normal.bottom;
+
+        w.setAppearanceProvider([]() -> CandidateWindow::Appearance {
+            CandidateWindow::Appearance a;
+            a.fontSize = 30;
+            return a;
+        });
+        w.show({L"你好"}, 0, false, false, L"", POINT{300, 300}, L"wq");
+        RECT bigger{};
+        assert(GetClientRect(w.hwnd(), &bigger));
+        assert(bigger.bottom > normalH);   // 字号变大，窗口高度必须跟着变
+
+        w.setAppearanceProvider(nullptr);
+        w.hide();
+    }
+
     std::puts("candidate window test: PASS");
     return 0;
 }

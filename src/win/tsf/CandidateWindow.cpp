@@ -24,6 +24,7 @@ namespace {
 
 HINSTANCE g_hinst = nullptr;
 const wchar_t *kClassName = L"FreeIME11CandidateWnd";
+CandidateWindow::AppearanceProvider g_appearanceProvider;
 // 模式提示的自动消失定时器
 constexpr UINT_PTR kHintTimerId = 0x11E1;
 
@@ -52,6 +53,10 @@ bool ptInRect(const RECT &r, int x, int y) {
 CandidateWindow &CandidateWindow::instance() {
     static CandidateWindow w;
     return w;
+}
+
+void CandidateWindow::setAppearanceProvider(AppearanceProvider provider) {
+    g_appearanceProvider = std::move(provider);
 }
 
 void CandidateWindow::setInstanceHandle(HINSTANCE hinst) { g_hinst = hinst; }
@@ -271,17 +276,22 @@ void CandidateWindow::render() {
 
     const int s = scale_;
 
+    // 外观（每次绘制都问 provider，配置改完立刻生效；没注入时用内置默认外观）
+    Appearance ap = g_appearanceProvider ? g_appearanceProvider() : Appearance{};
+    const int fontSize = std::clamp(ap.fontSize, 8, 36);
+
     // 字体
-    Gdiplus::FontFamily yahei(L"Microsoft YaHei UI");
+    Gdiplus::FontFamily custom(ap.fontName.c_str());
     Gdiplus::FontFamily segoe(L"Segoe UI");
-    Gdiplus::FontFamily *family = yahei.IsAvailable() ? &yahei : &segoe;
-    Gdiplus::Font fontText(family, static_cast<REAL>(scaleOf(15, s)), FontStyleRegular, UnitPixel);
-    Gdiplus::Font fontNum(family, static_cast<REAL>(scaleOf(11, s)), FontStyleRegular, UnitPixel);
+    Gdiplus::FontFamily *family = custom.IsAvailable() ? &custom : &segoe;
+    Gdiplus::Font fontText(family, static_cast<REAL>(scaleOf(fontSize, s)), FontStyleRegular, UnitPixel);
+    Gdiplus::Font fontNum(family, static_cast<REAL>(scaleOf(std::max(8, fontSize - 4), s)),
+                          FontStyleRegular, UnitPixel);
 
     const int pad = scaleOf(9, s);
     const int gap = scaleOf(14, s);
     const int itemPadX = scaleOf(6, s);
-    const int radius = scaleOf(6, s);
+    const int radius = scaleOf(std::clamp(ap.radius, 0, 24), s);
     const int arrowW = scaleOf(26, s);
     const int inputH = scaleOf(24, s);   // 顶部编码输入框的行高
     const int rowGap = scaleOf(7, s);    // 输入框与候选行之间的间距
@@ -445,9 +455,9 @@ void CandidateWindow::render() {
             bp.AddArc(br.GetRight() - d, br.GetBottom() - d, (REAL)d, (REAL)d, 0, 90);
             bp.AddArc(br.X, br.GetBottom() - d, (REAL)d, (REAL)d, 90, 90);
             bp.CloseFigure();
-            SolidBrush bg(Color(255, 255, 255, 255));
+            SolidBrush bg(Color(ap.bgColor));
             g.FillPath(&bg, &bp);
-            Pen pen(Color(255, 213, 217, 222), 1.0f);
+            Pen pen(Color(ap.borderColor), 1.0f);
             g.DrawPath(&pen, &bp);
         }
 
@@ -515,9 +525,9 @@ void CandidateWindow::render() {
             sf.SetLineAlignment(StringAlignmentCenter);
 
             SolidBrush numBrush(hi ? Color(235, 235, 245, 255)
-                                   : (hovered ? Color(255, 70, 100, 160) : Color(255, 144, 150, 160)));
+                                   : (hovered ? Color(255, 70, 100, 160) : Color(ap.promptTextColor)));
             SolidBrush textBrush(hi ? Color(255, 255, 255, 255)
-                                    : (hovered ? Color(255, 14, 60, 140) : Color(255, 31, 35, 41)));
+                                    : (hovered ? Color(255, 14, 60, 140) : Color(ap.wordTextColor)));
 
             const RECT &ir = itemRects_[i];
             RectF rNum(static_cast<REAL>(ir.left + itemPadX), static_cast<REAL>(ir.top),
@@ -595,7 +605,8 @@ void CandidateWindow::render() {
     POINT dst{x, y};
     SIZE size{w, height};
     POINT src{0, 0};
-    BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    BLENDFUNCTION blend{AC_SRC_OVER, 0,
+                         static_cast<BYTE>(255 - std::clamp(ap.transparency, 0, 240)), AC_SRC_ALPHA};
     UpdateLayeredWindow(hwnd_, screenDc, &dst, &size, memDc, &src, 0, &blend, ULW_ALPHA);
 
     SelectObject(memDc, old);

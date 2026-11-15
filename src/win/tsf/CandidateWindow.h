@@ -22,6 +22,21 @@
 
 class CandidateWindow {
 public:
+    /* 候选窗外观。不直接读配置，由 TSF 前端注入 provider：
+       这样窗口测试仍可独立链接，配置改动也能在下次绘制时立刻生效。 */
+    struct Appearance {
+        std::wstring fontName = L"Microsoft YaHei UI";
+        int fontSize = 15;                       // 100% DPI 下的像素字号
+        DWORD bgColor = 0xffffffff;              // ARGB
+        DWORD borderColor = 0xffd5d9de;
+        DWORD wordTextColor = 0xff1f2329;
+        DWORD promptTextColor = 0xff9096a0;
+        int radius = 6;
+        int transparency = 0;                    // 0 = 不透明，越大越透明
+    };
+    using AppearanceProvider = std::function<Appearance()>;
+    static void setAppearanceProvider(AppearanceProvider provider);
+
     // 鼠标点选候选（参数为当前页内下标，0 起）
     using SelectHandler = std::function<void(int)>;
     // 点击翻页箭头（-1 上一页 / +1 下一页）

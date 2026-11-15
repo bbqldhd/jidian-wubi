@@ -522,9 +522,10 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
         break;
 
     case VK_RETURN: {
-        /* 回车：把「候选框输入框里的原文」原样上屏，不是候选词。
-           空格/数字才是「选词上屏」的语义；回车留给「我就是要打这串编码」。 */
-        if (!im.inputCode_.empty() || !im.lead_.empty()) {
+        /* 回车：开关打开时把「候选框输入框里的原文」原样上屏（v11.2.3 起的行为）；
+           关掉则回到旧行为——上屏当前高亮候选。空格/数字始终是「选词上屏」。 */
+        const bool commitRaw = settings::instance().get_enterCommitPreedit();
+        if (commitRaw && (!im.inputCode_.empty() || !im.lead_.empty())) {
             out.commitText = im.applyTrad(im.lead_ + im.inputCode_);
         } else if (!im.cand_.texts.empty()) {
             // 没有输入串却还有候选（少见）：仍按老规矩上屏高亮候选
@@ -601,10 +602,16 @@ SessionOutcome Session::processKey(int vk, bool shift, bool ctrl, bool alt) {
             out.commitText = im.applyTrad(im.cand_.texts[2]);
             im.resetSession(); out.handled = true; out.state = im.state; return out;
         }
-        // 翻页 - / =：只有正在选词时才是翻页键。空闲时它们是普通标点，
-        // 不能在这里被吃掉，否则「－」「＝」永远打不出来。
-        if ((c == '-' || c == '=') && !im.cand_.texts.empty()) {
-            if (c == '-') {
+        // 翻页键：由 prevPageKey / nextPageKey 配置（默认 - / =，映射 10.8.9 键名约定）。
+        // 只有正在选词时才是翻页键；空闲时它们是普通标点，不能被吃掉。
+        // 若把翻页键误配成字母/数字，忽略该配置回退默认值，避免编码输入被吞。
+        char prevPage = keyNameToChar(settings::instance().get_prevPageKey());
+        char nextPage = keyNameToChar(settings::instance().get_nextPageKey());
+        if (!prevPage || isLetterCode(prevPage) || isDigit(prevPage)) prevPage = '-';
+        if (!nextPage || isLetterCode(nextPage) || isDigit(nextPage)) nextPage = '=';
+        const bool pageKey = !isLetterCode(c) && !isDigit(c) && (c == prevPage || c == nextPage);
+        if (pageKey && !im.cand_.texts.empty()) {
+            if (c == prevPage) {
                 if (im.pageIndex_ > 0) { --im.pageIndex_; im.candCursor_ = 0; }
             } else if (im.pageIndex_ + 1 < im.pageCount()) {
                 ++im.pageIndex_; im.candCursor_ = 0;

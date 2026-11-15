@@ -66,6 +66,7 @@ struct Category {
 
 const Category kCategories[] = {
     {"*", L"全部设置"},
+    {"!unwired", L"暂未生效"},
     {"Misc", L"常规"},
     {"Common", L"输入"},
     {"CandidateWinUi", L"候选窗 · 外观"},
@@ -348,12 +349,18 @@ std::wstring valueText(const settings::ConfigMeta &m, bool *modified = nullptr) 
 }
 
 std::wstring hintText(const settings::ConfigMeta &m) {
-    if (const Label *l = findLabel(m.key)) return l->hint ? l->hint : L"";
-    if (m.description && *m.description) return wide(m.description);
-    std::wstring w = L"默认：";
-    std::string d = m.defaultValue ? m.defaultValue : "";
-    if (d.size() > 36) d = d.substr(0, 33) + "...";
-    return w + wide(d.c_str());
+    std::wstring body;
+    if (const Label *l = findLabel(m.key)) {
+        body = l->hint ? l->hint : L"";
+    } else if (m.description && *m.description) {
+        body = wide(m.description);
+    } else {
+        std::string d = m.defaultValue ? m.defaultValue : "";
+        if (d.size() > 36) d = d.substr(0, 33) + "...";
+        body = L"默认：" + wide(d.c_str());
+    }
+    if (!settings::configIsWired(m.key)) return L"[暂未生效] " + body;
+    return body;
 }
 
 std::wstring nameText(const settings::ConfigMeta &m) {
@@ -367,7 +374,7 @@ void updateStatus() {
     if (!a.pending.empty()) {
         s = std::to_wstring(a.pending.size()) + L" 项未保存（* 表示已修改）";
     } else {
-        s = L"双击编辑 · 保存后于下一次输入结束时生效";
+        s = L"双击编辑 · 灰色项暂未生效 · 保存后生效";
     }
     SetWindowTextW(a.hStatus, s.c_str());
     EnableWindow(a.hBtnSave, !a.pending.empty());
@@ -383,11 +390,13 @@ void refreshList() {
     const std::wstring needle = lower(a.filter);
     const char *cat = kCategories[a.catIndex].key;
     const bool all = std::strcmp(cat, "*") == 0;
+    const bool unwiredOnly = std::strcmp(cat, "!unwired") == 0;
 
     int row = 0;
     for (size_t i = 0; i < count; ++i) {
         const settings::ConfigMeta &m = metas[i];
-        if (!all && std::strcmp(m.category, cat) != 0) continue;
+        if (unwiredOnly && settings::configIsWired(m.key)) continue;
+        if (!all && !unwiredOnly && std::strcmp(m.category, cat) != 0) continue;
         if (!needle.empty()) {
             std::wstring hay = lower(nameText(m) + L" " + wide(m.key) + L" " + hintText(m) + L" " + valueText(m));
             if (hay.find(needle) == std::wstring::npos) continue;
@@ -458,6 +467,13 @@ void editRow(int row) {
     const size_t idx = static_cast<size_t>(item.lParam);
     if (idx >= count) return;
     const settings::ConfigMeta &m = metas[idx];
+
+    if (!settings::configIsWired(m.key)) {
+        const std::wstring msg = L"「" + nameText(m) + L"」目前还没有接入输入法，改了也不会生效。\n\n"
+                                 L"它先保留在设置里，等后续版本实现；标灰的项都属于这一类。";
+        MessageBoxW(a.hwnd, msg.c_str(), L"暂未生效", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
 
     const std::string current = settings::instance().getByKey(m.key);
     auto it = a.pending.find(m.key);
@@ -708,21 +724,24 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             case CDDS_PREPAINT: return CDRF_NOTIFYITEMDRAW;
             case CDDS_ITEMPREPAINT: return CDRF_NOTIFYSUBITEMDRAW;
             case CDDS_ITEMPREPAINT | CDDS_SUBITEM:
+                size_t count = 0;
+                const settings::ConfigMeta *metas = settings::allConfigMeta(&count);
+                const size_t idx = static_cast<size_t>(cd->nmcd.lItemlParam);
+                const bool wired = idx < count && settings::configIsWired(metas[idx].key);
+                if (!wired) {
+                    cd->clrText = RGB(155, 155, 155);
+                    return CDRF_DODEFAULT;
+                }
                 if (cd->iSubItem == 2) {
                     cd->clrText = RGB(85, 85, 85);
                     return CDRF_DODEFAULT;
                 }
                 if (cd->iSubItem == 1) {
-                    size_t count = 0;
-                    const settings::ConfigMeta *metas = settings::allConfigMeta(&count);
-                    const size_t idx = static_cast<size_t>(cd->nmcd.lItemlParam);
-                    if (idx < count) {
-                        bool modified = false;
-                        const std::wstring v = valueText(metas[idx], &modified);
-                        if (modified) cd->clrText = RGB(190, 90, 0);
-                        else if (metas[idx].type == settings::ValueType::Bool)
-                            cd->clrText = (v == L"开启") ? RGB(0, 90, 158) : RGB(120, 120, 120);
-                    }
+                    bool modified = false;
+                    const std::wstring v = valueText(metas[idx], &modified);
+                    if (modified) cd->clrText = RGB(190, 90, 0);
+                    else if (metas[idx].type == settings::ValueType::Bool)
+                        cd->clrText = (v == L"开启") ? RGB(0, 90, 158) : RGB(120, 120, 120);
                 }
                 return CDRF_DODEFAULT;
             }

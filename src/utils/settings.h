@@ -15,6 +15,7 @@
 #undef FREEWB_RESTORE_X11_DATA_MACRO
 #endif
 
+#include <cstring>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -175,6 +176,32 @@ inline const ConfigMeta *allConfigMeta(size_t *count = nullptr)
     };
     if (count) *count = sizeof(kMetas) / sizeof(kMetas[0]);
     return kMetas;
+}
+
+/**
+ * 已接线 = 会话层 / TSF 前端 / 候选窗真的会读取的配置键。
+ *
+ * 这是「实现进度」而非配置定义，无法从代码自动推导，新增接线时必须同步更新这一份。
+ * 设置 GUI 与文档共用它：未接线的项会标灰并注明「暂未生效」，避免用户改了没反应。
+ */
+inline bool configIsWired(const char *key)
+{
+    static const char *const kWired[] = {
+        // 会话 / 引擎层原本就在读的
+        "charSet", "inputMode", "simpTradFlg", "fullWidthFlg", "chinesePunc",
+        "puncAutoPair", "pinyinFuzzy", "candiWordCount", "wubiTable", "pinyinTable",
+        "secondRecodeKey", "thirdRecodeKey", "WbzxEngine", "WbpyEngine", "PyEngine",
+        "autoPhrase", "typeEffect", "uiAudioEffect", "zzSpecialEncodingSymbols",
+        // 设置界面接线时新增（回车 / 翻页 / 候选窗外观）
+        "enterCommitPreedit", "prevPageKey", "nextPageKey",
+        "candiTextFontName", "candiTextFontSize", "bgColor", "borderColor",
+        "candiWordTextColor", "candiPromptTextColor", "radius", "transparency",
+    };
+    for (const char *k : kWired)
+    {
+        if (std::strcmp(k, key) == 0) return true;
+    }
+    return false;
 }
 
 /**
