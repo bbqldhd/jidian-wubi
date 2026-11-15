@@ -67,6 +67,12 @@ src/win/tsf/CandidateWindow.cpp src/win/tsf/ToolbarWindow.cpp"
 # 源文件 → 目标文件（路径里的斜杠换成下划线，避免建子目录）
 obj_of() { echo "build/obj/$(echo "$1" | sed 's|/|_|g; s|\.cpp$|.o|')"; }
 
+# 增量脚本不生成 depfile，光比 .cpp/.o 时间戳会漏掉头文件改动：
+# 只要任一公共头文件比 .o 新就重编（保守，但保证改了 settings.h 之类一定生效）。
+headers_newer_than() {
+    find src third_party -name '*.h' -newer "$1" -print -quit 2>/dev/null | grep -q .
+}
+
 BUILT=0
 SKIPPED=0
 
@@ -78,7 +84,7 @@ compile_group() {
     local src o st
     for src in "$@"; do
         o=$(obj_of "$src")
-        if [ -f "$o" ] && [ "$o" -nt "$src" ]; then
+        if [ -f "$o" ] && [ "$o" -nt "$src" ] && ! headers_newer_than "$o"; then
             SKIPPED=$((SKIPPED + 1))
             continue
         fi
