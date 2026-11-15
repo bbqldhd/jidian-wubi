@@ -8,13 +8,13 @@
 ; MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 ; See the Mulan PubL v2 for more details.
 
-; FreeIME 11 —— Inno Setup 安装脚本（v11.2.5）
+; FreeIME 11 —— Inno Setup 安装脚本（v11.2.6）
 ; 生成标准 Windows 安装包：向导界面 + 添加/删除程序注册 + 自动卸载 + TSF 自注册
 
 [Setup]
 AppId={{FreeIME11-11.0.1}
 AppName=极点五笔 11
-AppVersion=11.2.5
+AppVersion=11.2.6
 AppPublisher=FreeIME Project
 AppPublisherURL=https://github.com/bbqldhd/jidian-wubi
 AppSupportURL=https://gitee.com/red-egg-carrying-ice-cream/jidian-wubi
@@ -22,7 +22,7 @@ DefaultDirName={autopf}\FreeIME11
 DefaultGroupName=极点五笔 11
 DisableProgramGroupPage=yes
 OutputDir=..\build
-OutputBaseFilename=FreeIME11-11.2.5-setup
+OutputBaseFilename=FreeIME11-11.2.6-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=admin

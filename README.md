@@ -14,7 +14,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.2.5**。
+版本号 **11.2.6**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -23,7 +23,7 @@
 > 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
 
 [![License](https://img.shields.io/badge/license-Mulan%20PSL%20v2-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v11.2.5-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
+[![Release](https://img.shields.io/badge/release-v11.2.6-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
 
 | 平台 | 地址 |
 |---|---|
@@ -44,7 +44,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序（Win32 GUI）
-├── cmake/                   # 版本资源 11.2.5、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.2.6、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -107,7 +107,7 @@ JOBS=16 bash build_mingw.sh    # 想拉满逻辑线程
 
 ## 安装
 
-1. 运行 `FreeIME11-11.2.5-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+1. 运行 `FreeIME11-11.2.6-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
    写入「添加/删除程序」、创建开始菜单快捷方式；**不再在桌面创建快捷方式**）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
@@ -124,6 +124,35 @@ JOBS=16 bash build_mingw.sh    # 想拉满逻辑线程
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.2.6：设置项接线 + 未生效项标注
+
+上一版把 85 个配置项全放进了设置界面，但其中只有 19 个真的被输入法读取——改了没反应。
+这轮按优先级处理：
+
+**接线 11 项（19 → 30 生效）**
+
+- `enterCommitPreedit`：回车行为不再硬编码。开启 = 上屏原文（v11.2.3 起的行为），
+  关闭 = 回到旧行为「上屏当前高亮候选」。之前这个开关完全是摆设。
+- `prevPageKey` / `nextPageKey`：翻页键从写死的 `-` / `=` 改为读配置键名；
+  误配成字母或数字时自动回退，避免吞掉编码输入。
+- 候选窗外观 8 项：字体名、字号、背景色、边框色、候选文字色、提示文字色、圆角、透明度。
+  改用 `Appearance` + provider 注入（不破坏窗口独立测试），每次绘制都读配置，改完立刻生效；
+  配置仍是默认值时保留内置配色，避免升级后外观无端变样。
+
+**未生效项不再骗人**
+
+- `settings.h` 新增 `configIsWired()` 作为「哪些真的生效」的唯一清单，新增接线只改这一处。
+- 设置界面里未接线项整行浅灰、说明列带 `[暂未生效]` 前缀，双击弹提示而不接受编辑；
+  左侧新增「暂未生效」分类可集中查看剩余 55 项。
+
+**构建修复**
+
+- 增量编译原来只比 `.cpp` / `.o` 时间戳，改公共头文件不会触发重编，可能静默产出旧代码。
+  现在任一 `.h` 比 `.o` 新就重编该组；实测无改动「编译 0 / 跳过 31」、
+  touch 头文件「编译 31 / 跳过 0」。
+
+9 个自测全部通过（新增回车开关两种行为、provider 字号必须影响窗口布局高度等用例）。
 
 ## v11.2.5：设置界面 + 安装后不再占用桌面
 

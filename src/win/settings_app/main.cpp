@@ -513,7 +513,7 @@ void openDataDir() {
 
 void showAbout(HWND parent) {
     MessageBoxW(parent,
-        L"极点五笔 11 (FreeIME 11)  v11.2.5.0\n\n"
+        L"极点五笔 11 (FreeIME 11)  v11.2.6.0\n\n"
         L"Windows TSF 输入法现代重制\n"
         L"版权所有 Copyright (c) 2026 Charry\n"
         L"许可证：木兰公共许可证，第 2 版（Mulan PubL v2）\n\n"
