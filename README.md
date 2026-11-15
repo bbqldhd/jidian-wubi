@@ -14,7 +14,7 @@
 
 极点五笔（极点中文汉字输入平台）的现代重制版：以现代 **TSF（Text Services Framework）** 完整重写，
 目标平台 **Windows 11 26H2**（兼容 Windows 10 1809+），支持 **x64 / ARM64** 双原生架构，
-版本号 **11.2.4**。
+版本号 **11.2.5**。
 
 本重制基于对原版 `setup10.8.9.exe`（极点五笔纪念版，纯 IMM32 架构）的逆向分析，以及原作者
 在 openKylin 开源的 [FreeWB](https://gitee.com/openkylin/freewb)（Mulan PSL v2.0）作为引擎蓝本，
@@ -23,7 +23,7 @@
 > 本项目（极点五笔 11 / FreeIME 11）的逆向分析、源码重构、编译打包与测试发布，**完全由 AI + REA 完成**。
 
 [![License](https://img.shields.io/badge/license-Mulan%20PSL%20v2-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v11.2.4-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
+[![Release](https://img.shields.io/badge/release-v11.2.5-green.svg)](https://github.com/bbqldhd/jidian-wubi/releases)
 
 | 平台 | 地址 |
 |---|---|
@@ -44,7 +44,7 @@ freeime11-win/
 │       ├── config/          # 10.8.9 旧版 GBK INI → 新配置迁移
 │       ├── migrate/         # 迁移工具
 │       └── settings_app/    # 设置程序（Win32 GUI）
-├── cmake/                   # 版本资源 11.2.4、DPI 感知 manifest
+├── cmake/                   # 版本资源 11.2.5、DPI 感知 manifest
 ├── installer/               # WiX (MSI) 安装脚本
 ├── tests/                   # 会话层冒烟测试
 └── docs/                    # 逆向分析报告、实现说明、数据格式、缺陷与验证清单
@@ -107,8 +107,8 @@ JOBS=16 bash build_mingw.sh    # 想拉满逻辑线程
 
 ## 安装
 
-1. 运行 `FreeIME11-11.2.4-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
-   写入「添加/删除程序」、创建开始菜单快捷方式）。
+1. 运行 `FreeIME11-11.2.5-setup.exe`（Inno Setup 标准安装向导：自动请求管理员、注册 TSF 文本服务、
+   写入「添加/删除程序」、创建开始菜单快捷方式；**不再在桌面创建快捷方式**）。
 2. 安装结束时 `freeime11-addlang.exe` 会以当前用户身份启用输入法
    （`ActivateProfile` + `EnableLanguageProfile` + 写入 `REG_DWORD` 语言列表项），
    装完即可在输入法列表里看到「极点五笔 11」，无需手动添加。
@@ -124,6 +124,28 @@ JOBS=16 bash build_mingw.sh    # 想拉满逻辑线程
 > 说明：MinGW 构建的 DLL 为 **x64** 目标。ARM64 需用 Visual Studio `-A ARM64` 构建。
 > MinGW 的 `msctf.h` 不含 `ITfCandidateListUIElement`，因此候选窗为自绘实现
 > （分层窗口 + GDI+，`src/win/tsf/CandidateWindow.cpp`），不依赖 TSF3 接口。
+
+## v11.2.5：设置界面 + 安装后不再占用桌面
+
+**设置程序从命令行骨架换成完整的 Win32 GUI**
+
+以前 `freeime11-settings.exe` 不带参数启动时只弹一个「用法」消息框，
+工具栏点「设置」看到的就是那个，根本改不了配置。现在：
+
+- 左侧分类浏览，右侧表格列出全部 **85 个配置项**（项目 / 当前值 / 说明），顶部可搜索
+- 双击布尔项直接切换开启/关闭；双击数值或文本项弹出输入框（带中文说明与默认值）
+- 改动先缓存在界面里（带 `*` 标记），点「保存」才写盘；关闭时提示未保存
+- 支持「还原」「恢复默认」「打开数据目录」「关于」
+- Common Controls 6 视觉样式、Per-Monitor V2 DPI、微软雅黑；`--opendata` 等命令行入口保留
+
+顺带修掉一个会让设置保存无效的底层问题：`setByKey()` 以前只写字符串槽，
+但保存 Bool/Int 时读的是各自的类型槽 —— 通用写入等于什么都没存；`getByKey()` 同样只返回默认值。
+现在两者都按类型处理，并新增 `allConfigMeta()` 让界面从单一数据源读取配置清单。
+
+**安装器**
+
+- 去掉桌面快捷方式条目，也去掉安装向导里「创建桌面快捷方式」的可勾选项；
+  开始菜单的「设置 / 迁移 10.8.9 数据 / 卸载」三个入口保持不变。
 
 ## v11.2.4：协议改为木兰公共许可证第 2 版
 
