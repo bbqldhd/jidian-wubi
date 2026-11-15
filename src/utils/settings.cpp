@@ -219,15 +219,59 @@ void Settings::restoreAllDefaults()
 
 bool Settings::setByKey(const std::string &uniquename, const std::string &value)
 {
-    if (findEntryByName(uniquename) == nullptr)
+    /* 通用写入必须按条目类型写进对应的槽位：applyOneEntryToIni() 保存 Bool 时读
+       boolValue、保存 Int 时读 intValue，只改 stringValue 等于什么都没存。
+       设置 GUI 走的正是这个接口。 */
+    ConfigEntry *e = findEntryByName(uniquename);
+    if (!e)
         return false;
-    writeString(uniquename, value);
+
+    switch (e->type)
+    {
+    case ValueType::Bool:
+    {
+        const bool b = (value == "true" || value == "1" || value == "yes" || value == "on");
+        e->value.boolValue = b;
+        e->value.stringValue = b ? "true" : "false";
+        break;
+    }
+    case ValueType::Int:
+    {
+        int n = 0;
+        try
+        {
+            n = std::stoi(value);
+        }
+        catch (...)
+        {
+            return false;   // 非数字：拒绝，避免把错误值写进配置
+        }
+        e->value.intValue = n;
+        e->value.stringValue = std::to_string(n);
+        break;
+    }
+    case ValueType::String:
+        e->value.stringValue = value;
+        break;
+    }
+    persistEntry(*e);
     return true;
 }
 
 std::string Settings::getByKey(const std::string &uniquename) const
 {
-    return readString(uniquename);
+    /* load() 对 Bool/Int 只填 boolValue/intValue，stringValue 还是默认值，
+       所以这里同样要按类型格式化，GUI 才读得到用户当前值。 */
+    const auto it = entries_.find(uniquename);
+    if (it == entries_.end())
+        return std::string();
+    const ConfigEntry &e = it->second;
+    switch (e.type)
+    {
+    case ValueType::Bool: return e.value.boolValue ? "true" : "false";
+    case ValueType::Int: return std::to_string(e.value.intValue);
+    default: return e.value.stringValue;
+    }
 }
 
 bool Settings::save()

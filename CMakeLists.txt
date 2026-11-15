@@ -87,9 +87,9 @@ if(WIN32 AND FREEWB_BUILD_TSF)
     target_link_libraries(freeime11-migrate PRIVATE freeime11_session)
     target_compile_definitions(freeime11-migrate PRIVATE UNICODE _UNICODE)
 
-    # 设置程序
-    add_executable(freeime11-settings src/win/settings_app/main.cpp)
-    target_link_libraries(freeime11-settings PRIVATE freeime11_session)
+    # 设置程序（GUI：ListView / 分类列表，需 Common Controls 6 清单，MinGW 构建脚本会嵌入）
+    add_executable(freeime11-settings WIN32 src/win/settings_app/main.cpp)
+    target_link_libraries(freeime11-settings PRIVATE freeime11_session comctl32 gdi32 shell32)
     target_compile_definitions(freeime11-settings PRIVATE UNICODE _UNICODE)
 
     # 卸载程序

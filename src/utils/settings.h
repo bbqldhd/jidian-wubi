@@ -153,6 +153,31 @@ enum class ValueType
 #define FREEWB_CFG_AUTO_FROM_ENTRY(id, cat, vtype, def, sect, desc) FREEWB_CFG_##vtype##_APPLY(id, get_##id, set_##id)
 
 /**
+ * 单条配置的元数据（编译期常量，由 FREEWB_AUTO_ACCESSOR_ENTRY_LIST 单一数据源生成）。
+ * 供设置 GUI 枚举、分组、显示默认值与说明；不要在这里手写第二份清单。
+ */
+struct ConfigMeta
+{
+    const char *key;           // 唯一键名，与 ini 键一致
+    ValueType type;            // Bool / Int / String
+    const char *category;      // 逻辑分组（Misc / Common / ...）
+    const char *section;       // ini 段名
+    const char *defaultValue;  // 默认值字面量
+    const char *description;   // 说明（可能为空）
+};
+
+inline const ConfigMeta *allConfigMeta(size_t *count = nullptr)
+{
+    static const ConfigMeta kMetas[] = {
+#define FREEWB_META(id, cat, vtype, def, sect, desc) {#id, ValueType::vtype, #cat, #sect, def, desc},
+        FREEWB_AUTO_ACCESSOR_ENTRY_LIST(FREEWB_META)
+#undef FREEWB_META
+    };
+    if (count) *count = sizeof(kMetas) / sizeof(kMetas[0]);
+    return kMetas;
+}
+
+/**
  * 单条配置：元数据（字面量指针）+ 当前值。
  * map 的键与 uniquename 一致；构造时由 FREEWB_AUTO_ACCESSOR_ENTRY_LIST 填入。
  */

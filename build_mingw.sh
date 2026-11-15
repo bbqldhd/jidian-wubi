@@ -121,6 +121,9 @@ compile_group "$COMMON -DUNICODE -D_UNICODE -Isrc/win/tsf" $TSF_SRCS
 
 echo "[2/5] 编译版本资源..."
 "$WINDRES" -O coff --preprocessor="gcc -E -xc-header -DRC_INVOKED" installer/version.rc -o build/version.o
+# 设置程序的清单（Common Controls 6 视觉样式 + Per-Monitor V2 DPI）
+"$WINDRES" -O coff --preprocessor="gcc -E -xc-header -DRC_INVOKED" \
+  src/win/settings_app/settings.rc -o build/obj/settings_res.o
 
 # 链接期公共参数
 LINK_CORE="$(objs_of $(echo $CORE_SRCS))"
@@ -135,7 +138,7 @@ echo "[3/5] 链接 TSF 输入法 DLL..."
 echo "[4/5] 编译并运行自测..."
 # 测试源文件也走并行
 TEST_SRCS="tests/session_test.cpp tests/autocommit_test.cpp tests/pinyin_sentence_test.cpp \
-tests/pinyin_fuzzy_test.cpp tests/punc_test.cpp tests/keygate_test.cpp"
+tests/pinyin_fuzzy_test.cpp tests/punc_test.cpp tests/keygate_test.cpp tests/settings_test.cpp"
 # shellcheck disable=SC2086
 compile_group "$COMMON" $TEST_SRCS
 compile_group "$COMMON -DUNICODE -D_UNICODE -Isrc/win/tsf" tests/candidate_window_test.cpp
@@ -154,12 +157,14 @@ link_test punc_test              "$(obj_of tests/punc_test.cpp)"
 link_test keygate_test           "$(obj_of tests/keygate_test.cpp)"
 link_test pinyin_sentence_test   "$(obj_of tests/pinyin_sentence_test.cpp)"
 link_test pinyin_fuzzy_test      "$(obj_of tests/pinyin_fuzzy_test.cpp)"
+# settings_test 要用独立的临时数据目录，不能碰用户真实配置
+link_test settings_test          "$(obj_of tests/settings_test.cpp)"
 "$GPP" "$(obj_of tests/candidate_window_test.cpp)" "$(obj_of src/win/tsf/CandidateWindow.cpp)" \
   -lgdiplus -lgdi32 -luser32 -static -o build/candidate_window_test.exe
 "$GPP" "$(obj_of tests/toolbar_window_test.cpp)" "$(obj_of src/win/tsf/ToolbarWindow.cpp)" \
   -lgdiplus -lgdi32 -luser32 -ladvapi32 -static -o build/toolbar_window_test.exe
 
-for t in session_test autocommit_test pinyin_sentence_test pinyin_fuzzy_test punc_test keygate_test; do
+for t in session_test autocommit_test pinyin_sentence_test pinyin_fuzzy_test punc_test keygate_test settings_test; do
     "./build/$t.exe"
 done
 
@@ -174,8 +179,8 @@ compile_group "-std=c++17 -O2 -DUNICODE -D_UNICODE -municode" src/win/addlang/ma
 "$GPP" $LINK_CORE -municode "$(obj_of src/win/config/legacy_importer.cpp)" "$(obj_of src/win/migrate/main.cpp)" \
   -liconv -static -o build/freeime11-migrate.exe
 # shellcheck disable=SC2086
-"$GPP" $LINK_CORE -municode "$(obj_of src/win/settings_app/main.cpp)" \
-  -liconv -lshell32 -luser32 -static -o build/freeime11-settings.exe
+"$GPP" $LINK_CORE -municode "$(obj_of src/win/settings_app/main.cpp)" build/obj/settings_res.o \
+  -liconv -lshell32 -luser32 -lcomctl32 -lgdi32 -static -o build/freeime11-settings.exe
 # shellcheck disable=SC2086
 "$GPP" -municode "$(obj_of src/win/uninstall/main.cpp)" -lshell32 -luser32 -static -o build/freeime11-uninstall.exe
 # shellcheck disable=SC2086
