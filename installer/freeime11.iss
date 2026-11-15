@@ -38,8 +38,8 @@ LicenseFile=..\build\License.txt
 [Languages]
 Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
-[Tasks]
-Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; GroupDescription: "附加任务:"
+; 不在桌面创建快捷方式：只保留开始菜单里的三个入口（设置 / 迁移 / 卸载）。
+; 因此也不需要 [Tasks] 里的「创建桌面快捷方式」勾选项。
 
 [Files]
 ; 程序文件 -> Program Files\FreeIME11
@@ -72,7 +72,6 @@ Filename: "regsvr32.exe"; Parameters: "/u /s ""{app}\FreeIME11.dll"""; Flags: ru
 Name: "{group}\极点五笔 11 设置"; Filename: "{app}\freeime11-settings.exe"
 Name: "{group}\迁移 10.8.9 数据"; Filename: "{app}\freeime11-migrate.exe"
 Name: "{group}\卸载极点五笔 11"; Filename: "{app}\freeime11-uninstall.exe"
-Name: "{commondesktop}\极点五笔 11 设置"; Filename: "{app}\freeime11-settings.exe"; Tasks: desktopicon
 
 [Code]
 // 卸载时若 DLL 被输入法宿主占用，Inno 会登记「重启后删除」。
